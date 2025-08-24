@@ -91,7 +91,7 @@ app.use("/api/subscriptions", subscriptionRoutes);
 
 // Rota de teste da API
 app.get("/", (req, res) => {
-  res.json({ message: "API Doodle Dreams funcionando!" });
+  res.json({ message: "API Atelie Raisa funcionando!" });
 });
 
 // 8. Middleware de Tratamento de Erros (deve ser o último `app.use`)
