@@ -1,34 +1,41 @@
-const express = require("express")
-const blogController = require("../controllers/blogController")
-const autenticar = require("../middleware/autenticar")
-const restringirAdmin = require("../middleware/restringirAdmin")
-const { verifyToken, isAdmin } = require("../middleware/auth")
-const { uploadImage, processUploadedImage } = require('../middleware/upload');
+// routes/blogRoutes.js
 
-const router = express.Router()
+const express = require("express");
+const blogController = require("../controllers/blogController");
+const autenticar = require("../middleware/autenticar"); // Supondo que você use este
+const { verifyToken, isAdmin } = require("../middleware/auth"); // Ou este
+
+// --- MUDANÇA CRUCIAL 1: Importar a instância correta do middleware ---
+// Em vez de importar 'uploadImage' e 'processUploadedImage',
+// importamos a instância principal do multer.
+const { uploadProductFile } = require('../middleware/upload');
+
+const router = express.Router();
 
 // Rotas públicas
-router.get("/", blogController.listarPosts)
-router.get("/:slug", blogController.buscarPorSlug)
+router.get("/", blogController.listarPosts);
+router.get("/:slug", blogController.buscarPorSlug);
 
-// Rotas que precisam de autenticação
-router.use(autenticar)
+// As rotas abaixo precisam de autenticação de admin
+router.use(verifyToken, isAdmin);
 
 // Rotas administrativas
-router.get("/admin/todos", verifyToken, isAdmin, blogController.listarTodosAdmin)
-router.post("/", verifyToken, isAdmin, blogController.criarPost)
-router.put("/:id", verifyToken, isAdmin, blogController.atualizarPost)
-router.delete("/:id", verifyToken, isAdmin, blogController.excluirPost)
-router.post("/:id/aprovar", verifyToken, isAdmin, blogController.aprovarPost)
+router.get("/admin/todos", blogController.listarTodosAdmin);
+router.post("/", blogController.criarPost);
+router.put("/:id", blogController.atualizarPost);
+router.delete("/:id", blogController.excluirPost);
+router.post("/:id/aprovar", blogController.aprovarPost);
 
-// Rota para upload de imagem de destaque do blog
+// --- MUDANÇA CRUCIAL 2: Usar a instância correta do multer ---
+// A rota para upload de imagem de destaque do blog agora usa 'uploadProductFile'
+// e chama o método '.single()', passando o nome do campo ('imagem').
+//
+// REMOVEMOS 'processUploadedImage' daqui, pois o processamento
+// agora é responsabilidade do controller/service que recebe o buffer.
 router.post(
     '/upload-imagem',
-    verifyToken,
-    isAdmin,
-    uploadImage.single('imagem'),
-    processUploadedImage,
-    blogController.uploadImagemDestaque
+    uploadProductFile.single('imagem'), // O middleware do multer é chamado aqui
+    blogController.uploadImagemDestaque // O controller lida com o arquivo em req.file.buffer
 );
 
-module.exports = router
+module.exports = router;

@@ -25,46 +25,46 @@ function formatDateToPreference(date) {
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}${offsetFormatted}`
 }
 
+function getMercadoPagoDateFormat(date) {
+  return date.toISOString().replace('Z', '-03:00'); // Força o fuso de Brasília (GMT-3)
+}
+
 const pagamentoService = {
   async criarCheckoutPro(pedidoId, usuarioId) {
     try {
       const pedido = await Pedido.findOne({
         where: { id: pedidoId, usuarioId },
         include: [{ model: Usuario }],
-      })
+      });
 
-      if (!pedido) {
-        throw new Error("Pedido não encontrado")
-      }
-
-      if (pedido.status !== "pendente") {
-        throw new Error("Pedido já foi processado")
-      }
+      if (!pedido) throw new Error("Pedido não encontrado");
+      if (pedido.status !== "pendente") throw new Error("Pedido já foi processado");
 
       const items = pedido.itens.map((item) => ({
-        id: item.produtoId.toString(),
+        id: item.variacaoId ? item.variacaoId.toString() : item.produtoId.toString(),
         title: item.nome,
-        unit_price: Number.parseFloat(item.preco),
+        unit_price: Number(item.preco),
         quantity: item.quantidade,
-        category_id: "virtual_goods",
+        category_id: "virtual_goods", // Categoria genérica
       }));
 
       if (pedido.valorFrete && pedido.valorFrete > 0) {
         items.push({
           id: "frete",
           title: "Custo de Envio",
-          unit_price: Number.parseFloat(pedido.valorFrete),
+          unit_price: Number(pedido.valorFrete),
           quantity: 1,
-          category_id: "shipping_and_handling",
+          category_id: "shipping",
         });
       }
 
+      // --- USANDO A NOVA FUNÇÃO DE DATA ---
+      const now = new Date();
+      const expirationDate = new Date(now.getTime() + (24 * 60 * 60 * 1000)); // Expira em 24 horas
+
       const preference = {
         items,
-        payer: {
-          name: pedido.Usuario.nome,
-          email: pedido.Usuario.email,
-        },
+        payer: { name: pedido.Usuario.nome, email: pedido.Usuario.email },
         back_urls: {
           success: `${process.env.FRONTEND_URL}/pagamento/sucesso?pedido=${pedidoId}`,
           failure: `${process.env.FRONTEND_URL}/pagamento/erro?pedido=${pedidoId}`,
@@ -72,14 +72,14 @@ const pagamentoService = {
         },
         auto_return: "approved",
         external_reference: pedidoId.toString(),
-        notification_url: `${process.env.URL + '/api/pagamentos/webhook' || "http://localhost:3035"}/api/pagamentos/webhook`,
-        statement_descriptor: "ECOMMERCE",
+        notification_url: `${process.env.BASE_URL}/api/pagamentos/webhook`,
+        statement_descriptor: "ATELIERAISA",
         expires: true,
-        expiration_date_from: formatDateToPreference(new Date()),
-        expiration_date_to: formatDateToPreference(new Date(Date.now() + 24 * 60 * 60 * 1000)),
-      }
+        expiration_date_from: getMercadoPagoDateFormat(now),
+        expiration_date_to: getMercadoPagoDateFormat(expirationDate),
+      };
 
-      const response = await mercadopago.preferences.create(preference)
+      const response = await mercadopago.preferences.create(preference);
 
       await Pagamento.create({
         pedidoId,
@@ -89,16 +89,15 @@ const pagamentoService = {
         status: "pendente",
         transacaoId: response.body.id,
         dadosTransacao: response.body,
-      })
+      });
 
       return {
         checkoutUrl: response.body.init_point,
         preferenceId: response.body.id,
-        sandboxUrl: response.body.sandbox_init_point,
-      }
+      };
     } catch (error) {
-      console.error("Erro ao criar checkout:", error)
-      throw error
+      console.error("Erro ao criar checkout:", error);
+      throw error;
     }
   },
 

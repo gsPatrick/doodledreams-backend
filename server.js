@@ -1,132 +1,154 @@
-const express = require("express")
-const cors = require("cors")
-const helmet = require("helmet")
-const rateLimit = require("express-rate-limit")
+// server.js
+
+// 1. Dependências
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+const path = require("path"); // Módulo para lidar com caminhos de arquivos
 require('dotenv').config();
 
-const { sequelize } = require("./config/database")
-// IMPORTANTE: Garanta que todos os modelos sejam carregados antes do sync.
-// O arquivo index.js da pasta models geralmente já faz isso.
-require('./models'); 
-const tratarErros = require("./middleware/tratarErros")
-const swaggerUi = require('swagger-ui-express');
+// 2. Conexão com o Banco de Dados e Modelos
+const { sequelize } = require("./config/database");
+const { Usuario } = require('./models');
+const bcrypt = require('bcryptjs');
 
-const path = require("path")
-// Importar rotas
-const authRoutes = require("./routes/authRoutes")
-const produtoRoutes = require("./routes/produtoRoutes")
-const pedidoRoutes = require("./routes/pedidoRoutes")
-const cupomRoutes = require("./routes/cupomRoutes")
-const blogRoutes = require("./routes/blogRoutes")
-const downloadRoutes = require("./routes/downloadRoutes")
-const freteRoutes = require("./routes/freteRoutes")
-const usuarioRoutes = require("./routes/usuarioRoutes")
-const categoriaRoutes = require("./routes/categoriaRoutes")
-// Importar novas rotas
-const enderecoRoutes = require("./routes/enderecoRoutes")
-const avaliacaoRoutes = require("./routes/avaliacaoRoutes")
-const pagamentoRoutes = require("./routes/pagamentoRoutes")
-const uploadRoutes = require("./routes/uploadRoutes")
+// 3. Middlewares
+const tratarErros = require("./middleware/tratarErros");
 
-// Importar as novas rotas
-const favoritoRoutes = require("./routes/favoritoRoutes")
-const dashboardRoutes = require("./routes/dashboardRoutes")
-const configuracaoLojaRoutes = require("./routes/configuracaoLojaRoutes")
-const viaCepRoutes = require("./routes/viaCepRoutes")
-const relatorioRoutes = require("./routes/relatorioRoutes")
-const subscriptionRoutes = require("./routes/subscriptionRoutes")
+// 4. Rotas da API
+const authRoutes = require("./routes/authRoutes");
+const produtoRoutes = require("./routes/produtoRoutes");
+const pedidoRoutes = require("./routes/pedidoRoutes");
+const cupomRoutes = require("./routes/cupomRoutes");
+const blogRoutes = require("./routes/blogRoutes");
+const downloadRoutes = require("./routes/downloadRoutes");
+const freteRoutes =require("./routes/freteRoutes");
+const usuarioRoutes = require("./routes/usuarioRoutes");
+const categoriaRoutes = require("./routes/categoriaRoutes");
+const enderecoRoutes = require("./routes/enderecoRoutes");
+const avaliacaoRoutes = require("./routes/avaliacaoRoutes");
+const pagamentoRoutes = require("./routes/pagamentoRoutes");
+const uploadRoutes = require("./routes/uploadRoutes");
+const favoritoRoutes = require("./routes/favoritoRoutes");
+const dashboardRoutes = require("./routes/dashboardRoutes");
+const configuracaoLojaRoutes = require("./routes/configuracaoLojaRoutes");
+const viaCepRoutes = require("./routes/viaCepRoutes");
+const relatorioRoutes = require("./routes/relatorioRoutes");
+const subscriptionRoutes = require("./routes/subscriptionRoutes");
 
-const app = express()
+// 5. Inicialização do Express
+const app = express();
 
-// Middleware de segurança
+// 6. Configuração de Middlewares de Segurança
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
-}))
+}));
 app.use(cors({
-  origin: "*", // Em produção, restrinja para o seu domínio
+  origin: "*", // Em produção, restrinja para o domínio do seu frontend, ex: 'http://localhost:3004'
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
 
-// Rate limiting
+// Limite de requisições para proteger contra ataques de força bruta
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 500, // máximo 500 requests por IP, ajuste se necessário
-})
-app.use(limiter)
+  max: 500,
+});
+app.use(limiter);
 
-// Middleware para parsing
-app.use(express.json({ limit: "500mb" }))
-app.use(express.urlencoded({ extended: true, limit: "500mb" }))
-app.set('trust proxy', 1)
-// Rotas
-app.use("/api/auth", authRoutes)
-app.use("/api/produtos", produtoRoutes)
-app.use("/api/pedidos", pedidoRoutes)
-app.use("/api/cupons", cupomRoutes)
-app.use("/api/blog", blogRoutes)
-app.use("/api/downloads", downloadRoutes)
-app.use("/api/frete", freteRoutes)
-app.use("/api/usuarios", usuarioRoutes)
-app.use("/api/categorias", categoriaRoutes)
-// Adicionar as rotas após as rotas existentes
-app.use("/api/enderecos", enderecoRoutes)
-app.use("/api/avaliacoes", avaliacaoRoutes)
-app.use("/api/pagamentos", pagamentoRoutes)
-app.use("/api/uploads", uploadRoutes)
+// Middlewares para interpretar o corpo das requisições
+app.use(express.json({ limit: "50mb" })); // Aumentado o limite para uploads maiores
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.set('trust proxy', 1);
 
-// Adicionar as rotas após as rotas existentes
-app.use("/api/favoritos", favoritoRoutes)
-app.use("/api/dashboard", dashboardRoutes)
-app.use("/api/configuracoes/loja", configuracaoLojaRoutes)
-app.use("/api/cep", viaCepRoutes)
-app.use("/api/relatorios", relatorioRoutes)
-app.use("/api/subscriptions", subscriptionRoutes)
+// --- MUDANÇA PRINCIPAL AQUI ---
+// Servir arquivos estáticos da pasta 'uploads'.
+// Isso torna qualquer arquivo dentro de ./uploads acessível publicamente.
+// Ex: http://localhost:3045/uploads/imagens/meu-arquivo.avif
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// Servir arquivos estáticos da pasta uploads
-app.use("/uploads", express.static("uploads"))
+// 7. Registro das Rotas da API
+app.use("/api/auth", authRoutes);
+app.use("/api/produtos", produtoRoutes);
+app.use("/api/pedidos", pedidoRoutes);
+app.use("/api/cupons", cupomRoutes);
+app.use("/api/blog", blogRoutes);
+app.use("/api/downloads", downloadRoutes);
+app.use("/api/frete", freteRoutes);
+app.use("/api/usuarios", usuarioRoutes);
+app.use("/api/categorias", categoriaRoutes);
+app.use("/api/enderecos", enderecoRoutes);
+app.use("/api/avaliacoes", avaliacaoRoutes);
+app.use("/api/pagamentos", pagamentoRoutes);
+app.use("/api/uploads", uploadRoutes);
+app.use("/api/favoritos", favoritoRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/configuracoes/loja", configuracaoLojaRoutes);
+app.use("/api/cep", viaCepRoutes);
+app.use("/api/relatorios", relatorioRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
 
-// Middleware de tratamento de erros
-app.use(tratarErros)
-
-// Rota de teste
+// Rota de teste da API
 app.get("/", (req, res) => {
-  res.json({ message: "API Ecommerce funcionando!" })
-})
+  res.json({ message: "API Doodle Dreams funcionando!" });
+});
 
-// Configurar Swagger UI (serve documentação pré-gerada)
-const swaggerFile = require('./swagger-output.json');
-app.use('/doc', swaggerUi.serve, swaggerUi.setup(swaggerFile));
+// 8. Middleware de Tratamento de Erros (deve ser o último `app.use`)
+app.use(tratarErros);
 
-const PORT = process.env.PORT || 3001
+// 9. Porta do Servidor
+const PORT = process.env.PORT || 3045;
 
-// Inicializar servidor
-async function iniciarServidor() {
+// 10. Função para criar o usuário admin padrão
+async function criarAdminPadrao() {
   try {
-    await sequelize.authenticate()
-    console.clear()
-    console.log("Conexão com banco de dados estabelecida.")
+    const adminEmail = "admin@admin.com";
+    const adminSenha = "admin123";
 
-    try {
-      // --- MUDANÇA PRINCIPAL AQUI ---
-      // Usar { alter: true } para que o Sequelize tente fazer as alterações
-      // necessárias no schema para que ele corresponda aos modelos.
-      // Isso é ideal para desenvolvimento e para criar o schema inicial.
-      // CUIDADO: Em produção, isso pode ser perigoso. Mas para o seu caso agora, é perfeito.
-  
-      console.log("Modelos sincronizados com o banco de dados.");
+    const adminExistente = await Usuario.findOne({ where: { email: adminEmail } });
 
-    } catch (syncError) {
-      console.error("Erro ao sincronizar modelos:", syncError)
+    if (!adminExistente) {
+      console.log("Usuário admin padrão não encontrado. Criando...");
+      const senhaHash = await bcrypt.hash(adminSenha, 10);
+      await Usuario.create({
+        nome: "Administrador Padrão",
+        email: adminEmail,
+        senhaHash: senhaHash,
+        tipo: "admin",
+        ativo: true,
+      });
+      console.log("Usuário admin padrão criado com sucesso!");
+    } else {
+      console.log("Usuário admin padrão já existe.");
     }
-
-    app.listen(PORT, () => {
-      console.log(`Servidor rodando na porta ${PORT}`)
-    })
   } catch (error) {
-    console.error("Erro ao conectar com banco de dados:", error)
+    console.error("Erro ao tentar criar o usuário admin padrão:", error);
   }
 }
 
-// Iniciar servidor
+// 11. Função de Inicialização do Servidor
+async function iniciarServidor() {
+  try {
+    await sequelize.authenticate();
+    console.clear();
+    console.log("Conexão com banco de dados estabelecida com sucesso.");
+
+    // Sincroniza os modelos com o banco
+    // { alter: true } é seguro para desenvolvimento, pois tenta atualizar as tabelas sem apagar dados.
+    await sequelize.sync({ force: false });
+    console.log("Modelos sincronizados com o banco de dados.");
+
+    // Após a sincronização, verifica/cria o admin
+    await criarAdminPadrao();
+
+    app.listen(PORT, () => {
+      console.log(`Servidor rodando na porta ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Erro ao conectar com banco de dados ou iniciar o servidor:", error);
+  }
+}
+
+// 12. Iniciar o Servidor
 iniciarServidor();

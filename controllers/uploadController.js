@@ -1,6 +1,7 @@
 // src/controllers/uploadController.js
 
 const uploadService = require("../services/uploadService")
+const { Categoria } = require("../models") // Adicionar import da Categoria
 const { ArquivoProduto } = require("../models")
 // deleteImageVariants não é mais usado diretamente aqui
 // const { deleteImageVariants } = require("../utils/imageProcessor") 
@@ -12,6 +13,39 @@ const uploadController = {
    * Upload de imagem de produto (Múltiplas imagens)
    * Este endpoint agora espera um array de arquivos e os envia individualmente para o File Server.
    */
+
+
+  /**
+   * Upload de imagem de categoria
+   */
+  async uploadCategoriaImagem(req, res, next) {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ erro: "Nenhum arquivo enviado." });
+      }
+
+      const { categoriaId } = req.params;
+      const file = req.file;
+
+      const categoria = await Categoria.findByPk(categoriaId);
+      if (!categoria) {
+        return res.status(404).json({ erro: "Categoria não encontrada." });
+      }
+
+      // Salva a imagem no File Server (tipo 'categorias')
+      const imagemInfo = await uploadService.processarESalvarImagem(file);
+
+      // Atualiza a categoria com a URL da nova imagem
+      categoria.imagemUrl = imagemInfo.url; // Adicionamos a URL completa
+      await categoria.save();
+
+      res.status(200).json(categoria);
+    } catch (error) {
+      console.error("Erro ao fazer upload de imagem da categoria:", error);
+      next(error);
+    }
+  },
+
   async uploadProdutoImagens(req, res, next) {
     try {
       if (!req.files || req.files.length === 0) {

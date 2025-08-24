@@ -28,6 +28,10 @@ const Categoria = sequelize.define(
       type: DataTypes.BOOLEAN,
       defaultValue: true,
     },
+     imagemUrl: { // <<< NOVO CAMPO
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
   },
   {
     tableName: "categorias",

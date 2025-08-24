@@ -1,90 +1,28 @@
+// middleware/upload.js
+
 const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
-const { processImage } = require("../utils/imageProcessor");
 
-// Função para excluir arquivos com tentativas repetidas
-const safeUnlink = (filePath, maxRetries = 5, retryDelay = 2000) => {
-    let attempts = 0;
-    
-    const attemptDelete = () => {
-        attempts++;
-        try {
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-                console.log(`Arquivo temporário excluído com sucesso: ${filePath}`);
-                return true;
-            }
-            return true; // Arquivo já não existe, consideramos sucesso
-        } catch (err) {
-            if (err.code === 'EBUSY' && attempts < maxRetries) {
-                console.log(`Tentativa ${attempts}/${maxRetries} falhou. Arquivo ocupado: ${filePath}. Tentando novamente em ${retryDelay}ms...`);
-                setTimeout(attemptDelete, retryDelay);
-                return false;
-            } else {
-                console.warn(`Não foi possível excluir o arquivo temporário ${filePath} após ${attempts} tentativas:`, err.message);
-                return false;
-            }
-        }
-    };
-    
-    return attemptDelete();
-};
+/**
+ * Configuração de Armazenamento: Armazenamento em Memória
+ * 
+ * Em vez de salvar o arquivo em um diretório temporário no disco,
+ * `multer.memoryStorage()` mantém o arquivo como um Buffer na memória.
+ * O objeto do arquivo ficará disponível em `req.file.buffer`.
+ * Isso é ideal para processamento de imagens com bibliotecas como o Sharp,
+ * pois evita operações de leitura/escrita desnecessárias no disco.
+ */
+const storage = multer.memoryStorage();
 
-// Criar diretórios de upload se não existirem
-const ensureDirectoriesExist = () => {
-    const dirs = [
-        "uploads",
-        "uploads/temp",
-        "uploads/imagens",
-        "uploads/arquivos",
-        "uploads/videos"
-    ];
 
-    dirs.forEach(dir => {
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-    });
-};
-
-// Garantir que os diretórios existam
-ensureDirectoriesExist();
-
-// Configuração de armazenamento
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        // Salvar temporariamente em uploads/temp
-        cb(null, "uploads/temp");
-    },
-    filename: (req, file, cb) => {
-        // Gerar nome único com timestamp + número aleatório + extensão original
-        const timestamp = Date.now();
-        const randomNum = Math.floor(Math.random() * 10000);
-        const ext = path.extname(file.originalname);
-        const filename = `${timestamp}-${randomNum}${ext}`;
-        cb(null, filename);
-    }
-});
-
-// Filtro para aceitar apenas imagens
-const imageFilter = (req, file, cb) => {
-    const allowedMimeTypes = [
-        "image/jpeg",
-        "image/png",
-        "image/gif",
-        "image/webp"
-    ];
-
-    if (allowedMimeTypes.includes(file.mimetype)) {
-        cb(null, true);
-    } else {
-        cb(new Error("Tipo de arquivo não suportado. Apenas imagens são permitidas."), false);
-    }
-};
-
-// Filtro para arquivos de produto (imagens, PDFs, ZIPs)
-const productFileFilter = (req, file, cb) => {
+/**
+ * Filtro de Arquivos
+ * 
+ * Esta função é executada para cada arquivo no upload.
+ * Ela verifica se o 'mimetype' (tipo do arquivo) está em nossa lista de permissões.
+ * Isso é uma medida de segurança para garantir que apenas os tipos de arquivo
+ * esperados (imagens, vídeos, pdfs, etc.) sejam processados pelo servidor.
+ */
+const fileFilter = (req, file, cb) => {
     const allowedMimeTypes = [
         "image/jpeg",
         "image/png",
@@ -102,161 +40,42 @@ const productFileFilter = (req, file, cb) => {
     ];
 
     if (allowedMimeTypes.includes(file.mimetype)) {
+        // Se o tipo de arquivo é permitido, passamos 'true' para o callback.
         cb(null, true);
     } else {
-        cb(new Error("Tipo de arquivo não suportado."), false);
+        // Se não for permitido, passamos um erro. O Multer irá rejeitar o arquivo.
+        cb(new Error("Tipo de arquivo não suportado. Verifique os formatos permitidos."), false);
     }
 };
 
-// Filtro específico para vídeos
-const videoFilter = (req, file, cb) => {
-    const allowedMimeTypes = [
-        "video/mp4",
-        "video/webm",
-        "video/ogg",
-        "video/quicktime",
-        "video/x-msvideo",
-        "video/x-matroska"
-    ];
-
-    if (allowedMimeTypes.includes(file.mimetype)) {
-        cb(null, true);
-    } else {
-        cb(new Error("Tipo de arquivo não suportado. Apenas vídeos são permitidos."), false);
-    }
-};
-
-// Configuração do multer para upload de imagens
-const uploadImage = multer({
-    storage,
-    fileFilter: imageFilter,
-    limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB
-    }
-});
-
-// Configuração do multer para upload de arquivos de produto
-const uploadProductFile = multer({
-    storage,
-    fileFilter: productFileFilter,
-    limits: {
-        fileSize: 500 * 1024 * 1024 // 500MB
-    }
-});
-
-// Configuração do multer para upload de vídeos
-const uploadVideo = multer({
-    storage,
-    fileFilter: videoFilter,
-    limits: {
-        fileSize: 500 * 1024 * 1024 // 500MB
-    }
-});
 
 /**
- * Middleware para processar uma única imagem após upload
+ * Instância Principal do Multer
+ * 
+ * Aqui, criamos a instância do multer que será usada em todo o projeto.
+ * Ela combina a configuração de armazenamento e o filtro de arquivos,
+ * além de definir um limite de tamanho global para os uploads.
  */
-const processUploadedImage = async (req, res, next) => {
-    if (!req.file) {
-        return next();
+const upload = multer({
+    storage: storage,      // Usa o armazenamento em memória definido acima.
+    fileFilter: fileFilter, // Usa a função de filtro definida acima.
+    limits: {
+        fileSize: 50 * 1024 * 1024 // Limite global de 50MB por arquivo.
     }
+});
 
-    try {
-        // Processar a imagem
-        const processedImage = await processImage(
-            req.file.path,
-            path.parse(req.file.filename).name
-        );
-
-        // Adicionar informações processadas ao request
-        req.processedImage = processedImage;
-
-        // Remover arquivo temporário com um pequeno delay para evitar EBUSY no Windows
-        setTimeout(() => {
-            safeUnlink(req.file.path);
-        }, 3000); // Aumentado para 3 segundos
-
-        next();
-    } catch (error) {
-        // Limpar arquivo temporário em caso de erro, com delay
-        setTimeout(() => {
-            safeUnlink(req.file.path);
-        }, 3000);
-
-        next(error);
-    }
-};
 
 /**
- * Middleware para processar múltiplas imagens após upload
+ * Exportação
+ * 
+ * Exportamos um objeto contendo a instância 'upload' com um nome genérico
+ * ('uploadProductFile') para ser usado nas rotas.
+ * 
+ * Ao exportar a instância completa, as rotas podem chamar os métodos
+ * necessários, como `.single('nomeDoCampo')` para um arquivo ou
+ * `.array('nomeDoCampo', 10)` para múltiplos arquivos.
+ * Isso corrige o erro 'TypeError: Cannot read properties of undefined (reading 'array')'.
  */
-const processUploadedImages = async (req, res, next) => {
-    if (!req.files || req.files.length === 0) {
-        return next();
-    }
-
-    try {
-        const processedImages = [];
-
-        // Processar cada imagem
-        for (const file of req.files) {
-            const processedImage = await processImage(
-                file.path,
-                path.parse(file.filename).name
-            );
-
-            processedImages.push(processedImage);
-
-            // Remover arquivo temporário com um pequeno delay para evitar EBUSY no Windows
-            setTimeout(() => {
-                safeUnlink(file.path);
-            }, 3000); // Aumentado para 3 segundos
-        }
-
-        // Adicionar informações processadas ao request
-        req.processedImages = processedImages;
-
-        next();
-    } catch (error) {
-        // Limpar arquivos temporários em caso de erro, com delay
-        if (req.files) {
-            req.files.forEach(file => {
-                setTimeout(() => {
-                    safeUnlink(file.path);
-                }, 3000);
-            });
-        }
-
-        next(error);
-    }
-};
-
-// Funções auxiliares para uso direto
-const singleUpload = (fieldName = "imagem") => {
-    return [
-        uploadImage.single(fieldName),
-        processUploadedImage
-    ];
-};
-
-const multipleUpload = (fieldName = "imagens", maxCount = 10) => {
-    return [
-        uploadImage.array(fieldName, maxCount),
-        processUploadedImages
-    ];
-};
-
-const productFileUpload = (fieldName = "arquivo") => {
-    return uploadProductFile.single(fieldName);
-};
-
 module.exports = {
-    uploadImage,
-    uploadProductFile,
-    uploadVideo,
-    processUploadedImage,
-    processUploadedImages,
-    singleUpload,
-    multipleUpload,
-    productFileUpload
-}; 
+    uploadProductFile: upload
+};

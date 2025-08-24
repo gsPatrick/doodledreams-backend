@@ -1,16 +1,25 @@
-const express = require("express")
-const categoriaController = require("../controllers/categoriaController")
-const { verifyToken, isAdmin } = require("../middleware/auth")
+// routes/categoriaRoutes.js
 
-const router = express.Router()
+const express = require("express");
+const categoriaController = require("../controllers/categoriaController");
+const { verifyToken, isAdmin } = require("../middleware/auth");
+// --- MUDANÇA AQUI: Padronizando o nome da importação ---
+const { uploadProductFile } = require("../middleware/upload");
 
-// Rotas públicas
-router.get("/", categoriaController.listarCategorias)
-router.get("/:id", categoriaController.buscarCategoria)
+const router = express.Router();
 
-// Rotas administrativas
-router.post("/", verifyToken, isAdmin, categoriaController.criarCategoria)
-router.put("/:id", verifyToken, isAdmin, categoriaController.atualizarCategoria)
-router.delete("/:id", verifyToken, isAdmin, categoriaController.removerCategoria)
+// Rotas públicas (não precisam de upload)
+router.get("/", categoriaController.listarCategorias);
+router.get("/:id", categoriaController.buscarCategoria);
 
-module.exports = router 
+// --- ROTAS ADMINISTRATIVAS ---
+// Usando uploadProductFile.single() para um arquivo chamado 'file'
+router.post("/", verifyToken, isAdmin, uploadProductFile.single('file'), categoriaController.criarCategoria);
+
+// Usando uploadProductFile.single() para um arquivo chamado 'file'
+router.put("/:id", verifyToken, isAdmin, uploadProductFile.single('file'), categoriaController.atualizarCategoria);
+
+// Rota de exclusão (não precisa de upload)
+router.delete("/:id", verifyToken, isAdmin, categoriaController.removerCategoria);
+
+module.exports = router;

@@ -9,6 +9,7 @@ const uploadController = require('../controllers/uploadController');
 // para o uploadService, que por sua vez o envia para o File Server.
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() }); 
+router.post('/categorias/:categoriaId/imagem', upload.single('file'), uploadController.uploadCategoriaImagem);
 
 // --- ROTAS DE UPLOAD ---
 
