@@ -75,6 +75,7 @@ const pagamentoService = {
         notification_url: `${process.env.BASE_URL}/api/pagamentos/webhook`,
         statement_descriptor: "ATELIERAISA"
       };
+      //teste
 
       const response = await mercadopago.preferences.create(preference);
 
