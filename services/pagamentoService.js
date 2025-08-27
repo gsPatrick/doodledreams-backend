@@ -73,10 +73,7 @@ const pagamentoService = {
         auto_return: "approved",
         external_reference: pedidoId.toString(),
         notification_url: `${process.env.BASE_URL}/api/pagamentos/webhook`,
-        statement_descriptor: "ATELIERAISA",
-        expires: true,
-        expiration_date_from: getMercadoPagoDateFormat(now),
-        expiration_date_to: getMercadoPagoDateFormat(expirationDate),
+        statement_descriptor: "ATELIERAISA"
       };
 
       const response = await mercadopago.preferences.create(preference);
