@@ -19,51 +19,11 @@ const storage = multer.diskStorage({
 const upload = multer({ storage })
 
 const produtoController = {
- async criarProduto(req, res, next) {
+async criarProduto(req, res, next) {
     try {
-      const { nome, descricao, categoriaId, ativo, variations } = req.body;
-      const files = req.files;
-
-      const produto = await produtoService.criarProduto({ nome, descricao, categoriaId, ativo });
-
-      if (variations) {
-        const parsedVariations = JSON.parse(variations);
-        if (Array.isArray(parsedVariations) && parsedVariations.length > 0) {
-          
-          // --- MUDANÇA CRUCIAL AQUI ---
-          // Em vez de usar '...v', mapeamos explicitamente cada campo que queremos salvar.
-          // Isso garante que o 'id' temporário do frontend seja ignorado.
-          const variacoesParaCriar = parsedVariations.map(v => ({
-            nome: v.nome,
-            preco: v.preco,
-            estoque: v.estoque,
-            digital: v.digital,
-            produtoId: produto.id // Adicionamos a chave estrangeira do produto.
-          }));
-          
-          await VariacaoProduto.bulkCreate(variacoesParaCriar);
-        }
-      }
-
-      if (files && files.length > 0) {
-        let isFirstImage = true;
-        for (const file of files) {
-          const imagemInfo = await uploadService.processarESalvarImagem(file);
-          await ArquivoProduto.create({
-            produtoId: produto.id,
-            tipo: "imagem",
-            nome: imagemInfo.nomeOriginal,
-            url: imagemInfo.url,
-            mimeType: imagemInfo.tipo,
-            tamanho: imagemInfo.tamanho,
-            metadados: imagemInfo.metadados,
-            principal: isFirstImage,
-          });
-          isFirstImage = false;
-        }
-      }
-
-      res.status(201).json(produto);
+      // O req.body já vem com a estrutura completa do formulário do modal
+      const novoProduto = await produtoService.criarProduto(req.body);
+      res.status(201).json(novoProduto);
     } catch (error) {
       next(error);
     }
@@ -71,13 +31,11 @@ const produtoController = {
 
   async atualizarProduto(req, res, next) {
     try {
-      const { id } = req.params
-      if (req.body.preco !== undefined) delete req.body.preco;
-      if (req.body.estoque !== undefined) delete req.body.estoque;
-      const produto = await produtoService.atualizarProduto(id, req.body)
-      res.json(produto)
+      const { id } = req.params;
+      const produtoAtualizado = await produtoService.atualizarProduto(id, req.body);
+      res.status(200).json(produtoAtualizado);
     } catch (error) {
-      next(error)
+      next(error);
     }
   },
 

@@ -1,10 +1,8 @@
-// src/models/produto.js
+// src/models/Produto.js
 
-const { DataTypes, NOW } = require("sequelize")
-const { sequelize } = require("../config/database")
-const slugify = require('slugify'); // <-- Importar slugify
-
-// const PlanoAssinatura = require('./PlanoAssinatura'); // Remover import
+const { DataTypes } = require("sequelize");
+const { sequelize } = require("../config/database");
+const slugify = require('slugify');
 
 const Produto = sequelize.define(
   "Produto",
@@ -18,21 +16,55 @@ const Produto = sequelize.define(
       type: DataTypes.STRING,
       allowNull: false,
     },
-    // <-- ADICIONADA A COLUNA SLUG AQUI NOVAMENTE
     slug: {
       type: DataTypes.STRING,
-      allowNull: true, // Permitir null inicialmente, será gerado
-      unique: true,    // Deve ser único
+      allowNull: false,
+      unique: true,
     },
-    descricao: {
+    // --- NOVOS CAMPOS DO PDF ---
+    subtitulo: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Ex: Suplemento para manutenção das articulações...'
+    },
+    finalidade: {
       type: DataTypes.TEXT,
       allowNull: true,
+      comment: 'Descrição detalhada do propósito do produto.'
     },
-    // <-- PROPRIEDADE IMAGENS MANTIDA COMO JSON
-    imagens: {
+    niveisDeGarantia: {
       type: DataTypes.JSON,
-      defaultValue: [],
+      allowNull: true,
+      comment: 'Armazena um array de objetos: [{ componente, quantidade }]'
     },
+    umidadeMaxima: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      comment: 'Ex: 18,0%'
+    },
+    composicaoBasica: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Lista de ingredientes da composição básica.'
+    },
+    modoDeUsar: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Instruções de dosagem e administração.'
+    },
+    informacoesAdicionais: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      comment: 'Objeto com advertencias (array), conservacao (string), apresentacao (objeto).'
+    },
+    informacoesFabricante: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      comment: 'Objeto com dados do fabricante, CNPJ, SIF, etc.'
+    },
+    // --- FIM DOS NOVOS CAMPOS ---
+    
+    // --- Campos existentes mantidos ---
     categoriaId: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -41,87 +73,44 @@ const Produto = sequelize.define(
         key: 'id'
       }
     },
-    // <-- PROPRIEDADE ITENSDOWNLOAD MANTIDA COMO JSON
-    itensDownload: {
-      type: DataTypes.JSON, // Array de URLs ou paths de arquivos digitais
-      allowNull: true,
-      defaultValue: [],
-    },
     ativo: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
     },
-    // <-- CAMPOS DE DIMENSÃO MANTIDOS AQUI
+    // Dimensões para cálculo de frete
     peso: {
-        type: DataTypes.DECIMAL(10, 3),
-        allowNull: true,
-        defaultValue: 0.300, 
+      type: DataTypes.DECIMAL(10, 3),
+      allowNull: true,
+      defaultValue: 0.300, 
     },
-     largura: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true,
-        defaultValue: 10.00,
+    largura: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      defaultValue: 10.00,
     },
-     altura: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true,
-        defaultValue: 10.00,
+    altura: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      defaultValue: 10.00,
     },
-     comprimento: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true,
-        defaultValue: 10.00,
-    },
-     // <-- FLAG DIGITAL MANTIDA AQUI (se você a tinha antes, caso contrário remova)
-     // digital: { 
-     //    type: DataTypes.BOOLEAN,
-     //    defaultValue: false,
-     // },
-    createdAt: {
-      type: DataTypes.DATE,
-      defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
-      allowNull: false,
-    },
-    updatedAt: {
-      type: DataTypes.DATE,
-      defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
-      allowNull: false,
+    comprimento: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      defaultValue: 10.00,
     },
   },
   {
-    sequelize,
-    modelName: "Produto",
     tableName: "produtos",
     timestamps: true,
-    underscored: true,
-    // <-- HOOKS PARA GERAR SLUG ADICIONADOS
     hooks: {
-        beforeCreate: (produto, options) => {
-            if (produto.nome && !produto.slug) {
-                produto.slug = slugify(produto.nome, { lower: true, strict: true, remove: /[*+~.()'"!:@]/g });
-            }
-        },
-         beforeUpdate: (produto, options) => {
-             if (produto.changed('nome') && !options.fields.includes('slug')) {
-                  produto.slug = slugify(produto.nome, { lower: true, strict: true, remove: /[*+~.()'"!:@]/g });
-             } else if (produto.changed('slug') && produto.slug === '') {
-                 // Se o slug for definido para vazio, podemos regenerar a partir do nome
-                 produto.slug = slugify(produto.nome, { lower: true, strict: true, remove: /[*+~.()'"!:@]/g });
-             }
-         }
-     }
-  },
-)
+      // Hook para gerar/atualizar o slug automaticamente a partir do nome
+      beforeValidate: (produto) => {
+        if (produto.nome) {
+          produto.slug = slugify(produto.nome, { lower: true, strict: true, remove: /[*+~.()'"!:@]/g });
+        }
+      }
+    }
+  }
+);
 
-// Remover associação daqui (mantido comentado)
-// Produto.belongsToMany(PlanoAssinatura, {
-//   through: 'plano_assinatura_produtos',
-//   foreignKey: 'produtoId',
-//   as: 'planos',
-// });
-
-// static associate(models) { ... } <-- REMOVIDO SE NÃO ESTAVA NA VERSÃO ANTERIOR
-// Se sua versão anterior do modelo NÃO tinha static associate, remova-o.
-// Se tinha static associate MAS as associações eram definidas no index.js, mantenha a função vazia.
-
-module.exports = Produto
+module.exports = Produto;

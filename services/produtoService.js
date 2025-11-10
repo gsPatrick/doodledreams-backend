@@ -6,31 +6,33 @@ const { Op, fn, col, literal } = require("sequelize")
 const produtoService = {
   async criarProduto(dados) {
     try {
-      const produto = await Produto.create(dados)
-      return produto
+      // O Sequelize lida automaticamente com a conversão de objetos/arrays para JSON
+      // se o tipo de dado no modelo for DataTypes.JSON.
+      // Apenas garantimos que os dados cheguem aqui no formato correto.
+      const produto = await Produto.create(dados);
+      return produto;
     } catch (error) {
-      throw error
+      console.error("Erro ao criar produto no serviço:", error);
+      throw error;
     }
   },
 
+  // --- FUNÇÃO atualizarProduto ATUALIZADA ---
   async atualizarProduto(id, dados) {
     try {
-      const produto = await Produto.findByPk(id)
+      const produto = await Produto.findByPk(id);
       if (!produto) {
-        throw new Error("Produto não encontrado")
+        throw new Error("Produto não encontrado");
       }
 
-      // Remover atributos inexistentes
-      delete dados.tipo;
-      // Remove preco e estoque se vierem
-      if (dados.preco !== undefined) delete dados.preco;
-      if (dados.estoque !== undefined) delete dados.estoque;
+      // O Sequelize também lida com a atualização de campos JSON.
+      // O operador spread (...) garante que apenas os campos enviados sejam atualizados.
+      await produto.update(dados);
 
-      await produto.update(dados)
-
-      return produto
+      return produto;
     } catch (error) {
-      throw error
+      console.error("Erro ao atualizar produto no serviço:", error);
+      throw error;
     }
   },
 

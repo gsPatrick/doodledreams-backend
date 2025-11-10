@@ -9,73 +9,31 @@ require("dotenv").config()
 const pedidoController = {
  async criarPedido(req, res, next) {
     try {
-      const usuarioId = req.usuario.id; // Obtido do middleware verifyToken
-      // Agora extraímos diretamente 'itens', 'cupomCodigo', 'enderecoEntrega', 'freteId'
-      const { itens, cupomCodigo, enderecoEntrega, freteId } = req.body; // <-- Corrigido aqui, esperando objeto enderecoEntrega
+      // O ID do usuário vem do middleware de autenticação (req.user ou req.usuario)
+      const usuarioId = req.user.id; 
+      
+      // Extrai todos os dados necessários do corpo da requisição
+      const { itens, enderecoEntrega, freteId, cupomCodigo } = req.body;
 
-      if (!itens || itens.length === 0) {
-        return res.status(400).json({ erro: "Itens do pedido são obrigatórios" });
+      // Validação básica de entrada
+      if (!itens || !Array.isArray(itens) || itens.length === 0) {
+        return res.status(400).json({ erro: "O campo 'itens' é obrigatório e não pode estar vazio." });
       }
+      // O serviço já valida se o endereço é necessário para produtos físicos
 
-      // Calcular a quantidade total de itens para a validação do cupom
-      const quantidadeTotalItens = itens.reduce((acc, item) => acc + item.quantidade, 0);
-
-      // Verificar se todos os produtos são digitais para saber se frete é aplicável
-      const { VariacaoProduto } = require("../models");
-      const verificacoesDigitais = await Promise.all(itens.map(async (item) => {
-        if (item.variacaoId) {
-          const variacao = await VariacaoProduto.findOne({
-            where: { id: item.variacaoId, produtoId: item.produtoId }
-          });
-          return variacao?.digital || false;
-        }
-        return false; 
-      }));
-      const todosDigitais = verificacoesDigitais.every(isDigital => isDigital);
-
-      // Se NÃO for totalmente digital, freteId e enderecoEntrega devem estar presentes.
-      if (!todosDigitais) {
-          if (!enderecoEntrega) {
-              return res.status(400).json({ erro: "Endereço de entrega é obrigatório para produtos físicos." });
-          }
-           if (!freteId) {
-              return res.status(400).json({ erro: "Método de frete é obrigatório para produtos físicos." });
-           }
-      }
-
-      // Validar cupom se fornecido (agora com total e quantidade de itens)
-      if (cupomCodigo) {
-        // Para esta validação inicial, podemos passar 0 para o total, já que o total real será calculado no service
-        // ou você pode fazer um cálculo simples aqui para a primeira validação se quiser uma resposta mais rápida para o usuário.
-        // No entanto, o `pedidoService.criarPedido` já faz a validação completa antes de aplicar.
-        // Se a ideia é uma pré-validação, você pode fazer uma chamada aqui.
-        // Para manter a robustez da validação única no service, vamos apenas garantir que o código existe.
-        try {
-          // A validação completa com total e quantidade será feita dentro de pedidoService.criarPedido
-          // A validação do `cupomService.validarCupom` é para ser chamada com `totalPedido`, `quantidadeItens` e `usuarioId`.
-          // Se o seu frontend já fez uma validação prévia ao mostrar o desconto, essa chamada aqui pode ser mais simples
-          // ou até removida se a validação principal for no serviço de pedido.
-        } catch (error) {
-          return res.status(400).json({ erro: "Cupom inválido: " + error.message });
-        }
-      }
-
-      // Criar pedido com todas as informações
-      const resultado = await pedidoService.criarPedido(
-        usuarioId, 
-        itens, 
-        enderecoEntrega, 
-        todosDigitais ? null : freteId, // Frete ID do body (null se digital)
-        cupomCodigo // O cupomCodigo será validado e aplicado internamente no service
+      // Chama o serviço com todos os parâmetros
+      const novoPedido = await pedidoService.criarPedido(
+        usuarioId,
+        itens,
+        enderecoEntrega,
+        freteId,
+        cupomCodigo
       );
 
-      res.status(201).json(resultado);
+      res.status(201).json(novoPedido);
     } catch (error) {
-      console.error("Erro no controlador criarPedido:", error); 
-      if (error.message.includes("Estoque insuficiente") || error.message.includes("Cupom inválido") || error.message.includes("não encontrado")) {
-           return res.status(400).json({ erro: error.message });
-      }
-      next(error); 
+      // Passa o erro para o middleware de tratamento de erros
+      next(error);
     }
   },
 
