@@ -27,6 +27,7 @@ const enderecoRoutes = require("./routes/enderecoRoutes")
 const avaliacaoRoutes = require("./routes/avaliacaoRoutes")
 const pagamentoRoutes = require("./routes/pagamentoRoutes")
 const uploadRoutes = require("./routes/uploadRoutes")
+const authService = require("./services/authService");
 
 // Importar as novas rotas
 const favoritoRoutes = require("./routes/favoritoRoutes")
@@ -100,6 +101,33 @@ app.use('/doc', swaggerUi.serve, swaggerUi.setup(swaggerFile));
 
 const PORT = process.env.PORT || 3001
 
+
+// --- NOVO: Função para criar o administrador padrão ---
+async function criarAdminPadrao() {
+  const adminEmail = "admin@admin.com";
+  const adminSenha = "admin123";
+
+  try {
+    console.log("Verificando a existência do administrador padrão...");
+    const adminExistente = await Usuario.findOne({ where: { email: adminEmail } });
+
+    if (!adminExistente) {
+      console.log("Administrador padrão não encontrado. Criando novo administrador...");
+      await authService.criarUsuarioAdmin({
+        nome: "Administrador",
+        email: adminEmail,
+        senha: adminSenha,
+      });
+      console.log("Administrador padrão criado com sucesso!");
+    } else {
+      console.log("Administrador padrão já existe.");
+    }
+  } catch (error) {
+    console.error("Erro CRÍTICO ao tentar criar o administrador padrão:", error);
+  }
+}
+// ----------------------------------------------------
+
 // Inicializar servidor
 async function iniciarServidor() {
   try {
@@ -107,19 +135,14 @@ async function iniciarServidor() {
     console.clear()
     console.log("Conexão com banco de dados estabelecida.")
 
-    try {
-      // --- MUDANÇA PRINCIPAL AQUI ---
-      // Usar { alter: true } para que o Sequelize tente fazer as alterações
-      // necessárias no schema para que ele corresponda aos modelos.
-      // Isso é ideal para desenvolvimento e para criar o schema inicial.
-      // CUIDADO: Em produção, isso pode ser perigoso. Mas para o seu caso agora, é perfeito.
-await sequelize.sync({ force: true });
+    // Sincronizar modelos (cria as tabelas se não existirem)
+    // Em produção, você pode querer usar migrations em vez de 'alter: true'
+    await sequelize.sync({ alter: true }); 
+    console.log("Modelos sincronizados com o banco de dados.");
 
-      console.log("Modelos sincronizados com o banco de dados.");
-
-    } catch (syncError) {
-      console.error("Erro ao sincronizar modelos:", syncError)
-    }
+    // --- NOVO: Chamar a função para criar o admin ---
+    await criarAdminPadrao();
+    // ---------------------------------------------
 
     app.listen(PORT, () => {
       console.log(`Servidor rodando na porta ${PORT}`)
