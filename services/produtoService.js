@@ -6,14 +6,14 @@ const { Op } = require("sequelize")
 const produtoService = {
   async criarProduto(dados) {
     try {
-      // O 'preco' agora é uma parte válida dos dados do produto principal.
-      // O 'estoque' não pertence a este modelo e deve ser ignorado.
-      if (dados.estoque !== undefined) delete dados.estoque;
-
-      const produto = await Produto.create(dados)
-      return produto
+      // --- CORREÇÃO APLICADA ---
+      // O objeto 'dados' recebido do controller (que contém nome, preco, etc.)
+      // é passado diretamente para o método de criação do Sequelize.
+      const produto = await Produto.create(dados);
+      return produto;
     } catch (error) {
-      throw error
+      console.error("Erro no serviço ao criar produto:", error);
+      throw error;
     }
   },
 
