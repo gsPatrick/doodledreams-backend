@@ -137,7 +137,7 @@ async function iniciarServidor() {
 
     // Sincronizar modelos (cria as tabelas se não existirem)
     // Em produção, você pode querer usar migrations em vez de 'alter: true'
-    await sequelize.sync({ alter: true }); 
+    await sequelize.sync({ force: true }); 
     console.log("Modelos sincronizados com o banco de dados.");
 
     // --- NOVO: Chamar a função para criar o admin ---
