@@ -1,11 +1,6 @@
 const { DataTypes } = require("sequelize")
 const { sequelize } = require("../config/database")
 
-/**
- * Modelo de Variação de Produto.
- * Cada variação pertence a um produto e pode ter preço, valor adicional,
- * indicar se é digital (não possui frete) e controle de estoque próprio.
- */
 const VariacaoProduto = sequelize.define(
   "VariacaoProduto",
   {
@@ -26,11 +21,18 @@ const VariacaoProduto = sequelize.define(
     nome: {
       type: DataTypes.STRING,
       allowNull: false,
+      comment: "Nome da variação, ex: 'P', 'M', 'G'",
     },
-    preco: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
+    // --- MUDANÇA AQUI: REMOÇÃO DO PREÇO ---
+    // preco: { ... } // Campo removido
+
+    // --- MUDANÇA AQUI: ADIÇÃO DAS MEDIDAS ---
+    medidas: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: "Campo de texto livre para descrever as medidas do tamanho.",
     },
+    // --------------------------------------
     digital: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
