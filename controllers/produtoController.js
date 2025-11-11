@@ -16,26 +16,31 @@ const storage = multer.diskStorage({
 const upload = multer({ storage })
 
 const produtoController = {
-  async criarProduto(req, res, next) {
+ async criarProduto(req, res, next) {
     try {
-      if (req.body.preco !== undefined) delete req.body.preco;
-      if (req.body.estoque !== undefined) delete req.body.estoque;
-      const produto = await produtoService.criarProduto(req.body)
-      res.status(201).json(produto)
+      // --- CORREÇÃO APLICADA ---
+      // A lógica que deletava o preço foi removida.
+      // Agora, o corpo da requisição (req.body) é passado diretamente
+      // para o serviço, contendo o preço enviado pelo front-end.
+      
+      const produto = await produtoService.criarProduto(req.body);
+      res.status(201).json(produto);
     } catch (error) {
-      next(error)
+      next(error);
     }
   },
 
-  async atualizarProduto(req, res, next) {
+ async atualizarProduto(req, res, next) {
     try {
-      const { id } = req.params
-      if (req.body.preco !== undefined) delete req.body.preco;
-      if (req.body.estoque !== undefined) delete req.body.estoque;
-      const produto = await produtoService.atualizarProduto(id, req.body)
-      res.json(produto)
+      const { id } = req.params;
+      
+      // --- CORREÇÃO APLICADA TAMBÉM NA ATUALIZAÇÃO ---
+      // A lógica que deletava o preço foi removida aqui também.
+      
+      const produto = await produtoService.atualizarProduto(id, req.body);
+      res.json(produto);
     } catch (error) {
-      next(error)
+      next(error);
     }
   },
 
