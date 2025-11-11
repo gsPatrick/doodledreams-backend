@@ -113,7 +113,8 @@ async function iniciarServidor() {
       // necessárias no schema para que ele corresponda aos modelos.
       // Isso é ideal para desenvolvimento e para criar o schema inicial.
       // CUIDADO: Em produção, isso pode ser perigoso. Mas para o seu caso agora, é perfeito.
-  
+  await sequelize.sync({ force: true });
+
       console.log("Modelos sincronizados com o banco de dados.");
 
     } catch (syncError) {
