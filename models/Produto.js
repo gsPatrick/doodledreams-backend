@@ -25,19 +25,23 @@ const Produto = sequelize.define(
       type: DataTypes.TEXT,
       allowNull: true,
     },
-    // --- MUDANÇA PRINCIPAL AQUI ---
-    // Adicionando o preço fixo ao produto principal
     preco: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
       defaultValue: 0.00,
-      comment: "Preço fixo do produto, independente do tamanho.",
     },
-    // ---------------------------------
+    // --- MUDANÇA CRÍTICA AQUI ---
+    // O valor padrão para colunas JSON no PostgreSQL deve ser uma string.
     imagens: {
       type: DataTypes.JSON,
-      defaultValue: [],
+      defaultValue: '[]', // Alterado de [] para '[]'
     },
+    itensDownload: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      defaultValue: '[]', // Alterado de [] para '[]'
+    },
+    // ----------------------------
     categoriaId: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -46,34 +50,29 @@ const Produto = sequelize.define(
         key: 'id'
       }
     },
-    itensDownload: {
-      type: DataTypes.JSON,
-      allowNull: true,
-      defaultValue: [],
-    },
     ativo: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
     },
     peso: {
-        type: DataTypes.DECIMAL(10, 3),
-        allowNull: true,
-        defaultValue: 0.300, 
+      type: DataTypes.DECIMAL(10, 3),
+      allowNull: true,
+      defaultValue: 0.300, 
     },
      largura: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true,
-        defaultValue: 10.00,
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      defaultValue: 10.00,
     },
      altura: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true,
-        defaultValue: 10.00,
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      defaultValue: 10.00,
     },
      comprimento: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true,
-        defaultValue: 10.00,
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      defaultValue: 10.00,
     },
     createdAt: {
       type: DataTypes.DATE,
