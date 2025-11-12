@@ -267,7 +267,7 @@ const pedidoService = {
         where: {
           usuarioId,
           status: {
-            [Op.in]: ["pago", "processando", "enviado", "entregue", "concluido"],
+            [Op.in]: ["pago", "processando", "enviado", "entregue"],
           },
         },
       })
@@ -289,7 +289,7 @@ const pedidoService = {
         where: {
           usuarioId,
           status: {
-            [Op.in]: ["pago", "processando", "enviado", "entregue", "concluido"],
+            [Op.in]: ["pago", "processando", "enviado", "entregue"],
           },
         },
       })

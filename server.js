@@ -134,7 +134,7 @@ async function iniciarServidor() {
     try {
       // Usar { alter: true } para desenvolvimento.
       // Isso atualiza as tabelas para corresponder aos modelos sem apagar os dados.
-      await sequelize.sync({ force: false }); 
+      await sequelize.sync({ force: true }); 
       console.log("Modelos sincronizados com o banco de dados.");
 
     } catch (syncError) {
