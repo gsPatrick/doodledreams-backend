@@ -1,7 +1,8 @@
-const mercadopago = require("../config/mercadoPago")
-const { Pagamento, Pedido, Usuario, AssinaturaUsuario } = require("../models")
-const pedidoService = require("./pedidoService")
-const facebookCapiService = require("./facebookCapiService"); // <-- NOVO: Importe o novo serviço
+const mercadopago = require("../config/mercadoPago");
+const { Pagamento, Pedido, Usuario, AssinaturaUsuario, PlanoAssinatura } = require("../models");
+const pedidoService = require("./pedidoService");
+const facebookCapiService = require("./facebookCapiService");
+const { v4: uuidv4 } = require('uuid');
 
 // Helper para formatar datas em ISO com offset para MercadoPago
 function formatDateToPreference(date) {
@@ -96,6 +97,181 @@ const pagamentoService = {
     } catch (error) {
       console.error("Erro ao criar checkout:", error);
       throw error;
+    }
+  },
+
+    async processarPagamentoCartao(dados, usuarioId) {
+    try {
+      const { pedidoId, token, payment_method_id, issuer_id, installments } = dados;
+
+      const pedido = await Pedido.findOne({ where: { id: pedidoId, usuarioId } });
+      if (!pedido) throw new Error("Pedido não encontrado ou não pertence ao usuário.");
+      if (pedido.status !== 'pendente') throw new Error("Este pedido já foi processado.");
+
+      const usuario = await Usuario.findByPk(usuarioId);
+
+      const payment_data = {
+        transaction_amount: Number(pedido.total),
+        token: token,
+        description: `Pedido #${pedido.id} - Buddy Boost`,
+        installments: Number(installments),
+        payment_method_id: payment_method_id,
+        issuer_id: issuer_id,
+        payer: {
+          email: usuario.email,
+          first_name: usuario.nome.split(' ')[0],
+          last_name: usuario.nome.split(' ').slice(1).join(' '),
+          identification: {
+            type: dados.payer.identification.type,
+            number: dados.payer.identification.number,
+          },
+        },
+        external_reference: pedido.id.toString(),
+        notification_url: `${process.env.BASE_URL}/api/pagamentos/webhook`,
+      };
+
+      const paymentResponse = await mercadopago.payment.create(payment_data);
+      const paymentResult = paymentResponse.body;
+
+      await Pagamento.create({
+        pedidoId,
+        usuarioId,
+        valor: paymentResult.transaction_amount,
+        metodo: "mercado_pago_api_card",
+        status: paymentResult.status === 'approved' ? 'aprovado' : paymentResult.status,
+        transacaoId: paymentResult.id,
+        dadosTransacao: paymentResult,
+      });
+
+      if (paymentResult.status === 'approved') {
+        await pedidoService.atualizarStatusPedido(pedido.id, "pago");
+        facebookCapiService.sendPurchaseEvent(pedido, usuario);
+      } else {
+        await pedido.update({ status: 'cancelado' }); // Ou outro status de falha
+      }
+
+      return {
+        status: paymentResult.status,
+        status_detail: paymentResult.status_detail,
+        id: paymentResult.id,
+      };
+
+    } catch (error) {
+      console.error("Erro ao processar pagamento com cartão:", error.response ? error.response.data : error.message);
+      throw new Error("Falha ao processar o pagamento com cartão.");
+    }
+  },
+
+
+    async gerarPagamentoPix(pedidoId, usuarioId) {
+    try {
+      const pedido = await Pedido.findOne({ where: { id: pedidoId, usuarioId } });
+      if (!pedido) throw new Error("Pedido não encontrado ou não pertence ao usuário.");
+      if (pedido.status !== 'pendente') throw new Error("Este pedido já foi processado.");
+
+      const usuario = await Usuario.findByPk(usuarioId);
+      
+      const expirationDate = new Date();
+      expirationDate.setMinutes(expirationDate.getMinutes() + 30); // 30 minutos de validade
+
+      const payment_data = {
+        transaction_amount: Number(pedido.total),
+        description: `Pedido #${pedido.id} - Buddy Boost`,
+        payment_method_id: 'pix',
+        payer: {
+          email: usuario.email,
+          first_name: usuario.nome.split(' ')[0],
+          last_name: usuario.nome.split(' ').slice(1).join(' '),
+          // O Mercado Pago exige CPF para PIX. O ideal é que ele esteja no cadastro do usuário.
+          // identification: { type: 'CPF', number: '19119119100' }, 
+        },
+        external_reference: pedido.id.toString(),
+        notification_url: `${process.env.BASE_URL}/api/pagamentos/webhook`,
+        date_of_expiration: expirationDate.toISOString().replace('Z', '-03:00'),
+      };
+
+      const paymentResponse = await mercadopago.payment.create(payment_data);
+      const paymentResult = paymentResponse.body;
+
+      await Pagamento.create({
+        pedidoId,
+        usuarioId,
+        valor: paymentResult.transaction_amount,
+        metodo: "mercado_pago_api_pix",
+        status: 'pendente',
+        transacaoId: paymentResult.id,
+        dadosTransacao: paymentResult,
+      });
+
+      return {
+        paymentId: paymentResult.id,
+        qr_code: paymentResult.point_of_interaction.transaction_data.qr_code,
+        qr_code_base64: paymentResult.point_of_interaction.transaction_data.qr_code_base64,
+      };
+
+    } catch (error) {
+      console.error("Erro ao gerar pagamento PIX:", error.response ? error.response.data : error.message);
+      throw new Error("Falha ao gerar o pagamento PIX.");
+    }
+  },
+
+
+   async criarAssinaturaComCartao(dados, usuarioId) {
+    try {
+        const { planoId, token, frequencia, quantidade } = dados;
+
+        const plano = await PlanoAssinatura.findByPk(planoId);
+        if (!plano) throw new Error("Plano de assinatura não encontrado.");
+
+        const usuario = await Usuario.findByPk(usuarioId);
+
+        // Lógica de cálculo do valor da assinatura (pode ser mais complexa)
+        const valorTotal = Number(plano.preco) * Number(quantidade);
+
+        const subscriptionData = {
+            reason: `Assinatura ${plano.nome} x${quantidade}`,
+            auto_recurring: {
+                frequency: frequencia, // 20, 30 ou 60
+                frequency_type: 'days',
+                transaction_amount: valorTotal,
+                currency_id: 'BRL',
+            },
+            card_token_id: token,
+            payer_email: usuario.email,
+            back_url: `${process.env.FRONTEND_URL}/conta/assinaturas`,
+            status: 'authorized',
+        };
+
+        const subResponse = await mercadopago.preapproval.create(subscriptionData);
+        const subResult = subResponse.body;
+
+        if (subResult.status !== 'authorized') {
+            throw new Error(`Falha ao criar assinatura. Status: ${subResult.status}`);
+        }
+
+        // Salva a assinatura no nosso banco de dados
+        const proximaCobranca = new Date();
+        proximaCobranca.setDate(proximaCobranca.getDate() + Number(frequencia));
+        
+        await AssinaturaUsuario.create({
+            usuarioId,
+            planoId,
+            status: 'ativa',
+            mercadoPagoSubscriptionId: subResult.id,
+            dataProximoCobranca: proximaCobranca,
+            valorFrete: 0, // Ajustar se o frete for cobrado na assinatura
+            metodoFrete: 'A definir', // Ajustar
+        });
+
+        return {
+            status: subResult.status,
+            id: subResult.id,
+            reason: subResult.reason,
+        };
+
+    } catch (error) {
+        console.error("Erro ao criar assinatura com cartão:", error.response ? error.response.data : error.message);
+        throw new Error("Falha ao criar a assinatura.");
     }
   },
 

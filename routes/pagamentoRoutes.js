@@ -1,18 +1,25 @@
-const express = require("express")
-const pagamentoController = require("../controllers/pagamentoController")
-const autenticar = require("../middleware/autenticar")
-const restringirAdmin = require("../middleware/restringirAdmin")
+// /routes/pagamentoRoutes.js
 
-const router = express.Router()
+const express = require("express");
+const pagamentoController = require("../controllers/pagamentoController");
+const autenticar = require("../middleware/autenticar");
 
-// Webhook do Mercado Pago (sem autenticação)
-router.post("/webhook", pagamentoController.webhook)
+const router = express.Router();
 
-// Rotas que precisam de autenticação
-router.use(autenticar)
+// Webhook do Mercado Pago (público)
+router.post("/webhook", pagamentoController.webhook);
 
-router.post("/checkout", pagamentoController.criarCheckout)
-router.get("/status/:pedidoId", pagamentoController.verificarStatus)
-router.get("/", pagamentoController.listarPagamentos)
+// Todas as rotas abaixo exigem autenticação
+router.use(autenticar);
 
-module.exports = router
+// Rota principal para processar pagamentos (cartão, pix)
+router.post("/processar", pagamentoController.processarPagamento);
+
+// Rota para criar assinaturas
+router.post("/assinaturas", pagamentoController.criarAssinatura);
+
+// Rotas de consulta
+router.get("/status/:pedidoId", pagamentoController.verificarStatus);
+router.get("/", pagamentoController.listarPagamentos);
+
+module.exports = router;

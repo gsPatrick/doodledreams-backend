@@ -16,6 +16,51 @@ const pagamentoController = {
       next(error)
     }
   },
+  
+    async processarPagamento(req, res, next) {
+    try {
+      const { payment_method, ...dados } = req.body;
+      const usuarioId = req.usuario.id;
+
+      if (!payment_method || !dados.pedidoId) {
+        return res.status(400).json({ erro: "Método de pagamento e ID do pedido são obrigatórios." });
+      }
+
+      let resultado;
+
+      if (payment_method === 'card') {
+        resultado = await pagamentoService.processarPagamentoCartao(dados, usuarioId);
+      } else if (payment_method === 'pix') {
+        resultado = await pagamentoService.gerarPagamentoPix(dados.pedidoId, usuarioId);
+      } else {
+        return res.status(400).json({ erro: "Método de pagamento inválido." });
+      }
+
+      res.status(201).json(resultado);
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * NOVO CONTROLLER
+   * Orquestra a criação de uma assinatura.
+   */
+  async criarAssinatura(req, res, next) {
+    try {
+        const dados = req.body;
+        const usuarioId = req.usuario.id;
+
+        if (!dados.planoId || !dados.token || !dados.frequencia || !dados.quantidade) {
+            return res.status(400).json({ erro: "Dados insuficientes para criar a assinatura." });
+        }
+
+        const resultado = await pagamentoService.criarAssinaturaComCartao(dados, usuarioId);
+        res.status(201).json(resultado);
+    } catch (error) {
+        next(error);
+    }
+  },
 
   async webhook(req, res, next) {
     try {
