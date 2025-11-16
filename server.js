@@ -137,7 +137,7 @@ async function iniciarServidor() {
     // Sincroniza os modelos com o banco
     // { alter: true } é seguro para desenvolvimento, pois tenta atualizar as tabelas sem apagar dados.
     await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
-await sequelize.sync({ force: true }); // recria as tabelas
+await sequelize.sync({ force: false }); // recria as tabelas
 await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
     console.log("Modelos sincronizados com o banco de dados.");
 
