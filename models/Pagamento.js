@@ -1,3 +1,5 @@
+// /models/Pagamento.js
+
 const { DataTypes } = require("sequelize")
 const { sequelize } = require("../config/database")
 
@@ -30,11 +32,20 @@ const Pagamento = sequelize.define(
       allowNull: false,
     },
     metodo: {
-      type: DataTypes.ENUM("cartao", "pix", "boleto", "mercado_pago"),
+      // --- MUDANÇA PRINCIPAL AQUI ---
+      // Adicionamos os novos métodos para o Checkout Transparente
+      type: DataTypes.ENUM(
+        "cartao", 
+        "pix", 
+        "boleto", 
+        "mercado_pago", 
+        "mercado_pago_api_card", 
+        "mercado_pago_api_pix"
+      ),
       allowNull: false,
     },
     status: {
-      type: DataTypes.ENUM("pendente", "aprovado", "rejeitado", "cancelado"),
+      type: DataTypes.ENUM("pendente", "aprovado", "rejeitado", "cancelado", "in_process"),
       defaultValue: "pendente",
     },
     transacaoId: {
