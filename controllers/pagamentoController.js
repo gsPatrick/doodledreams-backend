@@ -1,23 +1,14 @@
-const pagamentoService = require("../services/pagamentoService")
+// /controllers/pagamentoController.js (VERSÃO CORRIGIDA E COMPLETA)
+
+const pagamentoService = require("../services/pagamentoService");
 
 const pagamentoController = {
-  async criarCheckout(req, res, next) {
-    try {
-      const { pedidoId } = req.body
-      const usuarioId = req.usuario.id
-
-      if (!pedidoId) {
-        return res.status(400).json({ erro: "ID do pedido é obrigatório" })
-      }
-
-      const checkout = await pagamentoService.criarCheckoutPro(pedidoId, usuarioId)
-      res.json(checkout)
-    } catch (error) {
-      next(error)
-    }
-  },
   
-    async processarPagamento(req, res, next) {
+  /**
+   * Orquestra o processamento de um pagamento (cartão ou pix).
+   * É chamado pela rota POST /processar.
+   */
+  async processarPagamento(req, res, next) {
     try {
       const { payment_method, ...dados } = req.body;
       const usuarioId = req.usuario.id;
@@ -43,8 +34,8 @@ const pagamentoController = {
   },
 
   /**
-   * NOVO CONTROLLER
    * Orquestra a criação de uma assinatura.
+   * É chamado pela rota POST /assinaturas.
    */
   async criarAssinatura(req, res, next) {
     try {
@@ -61,42 +52,41 @@ const pagamentoController = {
         next(error);
     }
   },
-
+  
+  // O webhook não muda
   async webhook(req, res, next) {
     try {
-      await pagamentoService.processarWebhook(req.body)
-      res.status(200).json({ message: "Webhook processado" })
+      await pagamentoService.processarWebhook(req.body);
+      res.status(200).json({ message: "Webhook processado" });
     } catch (error) {
-      console.error("Erro no webhook:", error)
-      res.status(200).json({ message: "Webhook recebido" }) // Sempre retornar 200 para o MP
+      console.error("Erro no webhook:", error);
+      res.status(200).json({ message: "Webhook recebido" }); // Sempre retorna 200 para o MP
     }
   },
 
+  // As rotas de consulta não mudam
   async verificarStatus(req, res, next) {
     try {
-      const { pedidoId } = req.params
-      const pagamento = await pagamentoService.verificarStatusPagamento(pedidoId)
-      res.json(pagamento)
+      const { pedidoId } = req.params;
+      const pagamento = await pagamentoService.verificarStatusPagamento(pedidoId);
+      res.json(pagamento);
     } catch (error) {
-      next(error)
+      next(error);
     }
   },
 
   async listarPagamentos(req, res, next) {
     try {
-      const filtros = req.query
-
-      // Se não for admin, filtrar apenas pagamentos do usuário
+      const filtros = req.query;
       if (req.usuario.tipo !== "admin") {
-        filtros.usuarioId = req.usuario.id
+        filtros.usuarioId = req.usuario.id;
       }
-
-      const pagamentos = await pagamentoService.listarPagamentos(filtros)
-      res.json(pagamentos)
+      const pagamentos = await pagamentoService.listarPagamentos(filtros);
+      res.json(pagamentos);
     } catch (error) {
-      next(error)
+      next(error);
     }
   },
-}
+};
 
-module.exports = pagamentoController
+module.exports = pagamentoController;
