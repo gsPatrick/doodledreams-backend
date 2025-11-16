@@ -100,68 +100,87 @@ const pagamentoService = {
     }
   },
 
-    async processarPagamentoCartao(dados, usuarioId) {
-    try {
-      const { pedidoId, token, payment_method_id, issuer_id, installments } = dados;
+   async processarPagamentoCartao(dados, usuarioId) {
+  try {
+    const { pedidoId, token, payment_method_id, issuer_id, installments, payer } = dados;
 
-      const pedido = await Pedido.findOne({ where: { id: pedidoId, usuarioId } });
-      if (!pedido) throw new Error("Pedido não encontrado ou não pertence ao usuário.");
-      if (pedido.status !== 'pendente') throw new Error("Este pedido já foi processado.");
+    console.log('🔍 Dados recebidos:', { pedidoId, token, payment_method_id, issuer_id, installments });
 
-      const usuario = await Usuario.findByPk(usuarioId);
+    // VALIDAÇÕES
+    if (!token) throw new Error("Token do cartão não fornecido");
+    if (!payment_method_id) throw new Error("payment_method_id não fornecido");
+    if (!issuer_id) throw new Error("issuer_id não fornecido");
+    if (!payer || !payer.identification) throw new Error("Dados do pagador incompletos");
 
-      const payment_data = {
-        transaction_amount: Number(pedido.total),
-        token: token,
-        description: `Pedido #${pedido.id} - Buddy Boost`,
-        installments: Number(installments),
-        payment_method_id: payment_method_id,
-        issuer_id: issuer_id,
-        payer: {
-          email: usuario.email,
-          first_name: usuario.nome.split(' ')[0],
-          last_name: usuario.nome.split(' ').slice(1).join(' '),
-          identification: {
-            type: dados.payer.identification.type,
-            number: dados.payer.identification.number,
-          },
+    const pedido = await Pedido.findOne({ where: { id: pedidoId, usuarioId } });
+    if (!pedido) throw new Error("Pedido não encontrado ou não pertence ao usuário.");
+    if (pedido.status !== 'pendente') throw new Error("Este pedido já foi processado.");
+
+    const usuario = await Usuario.findByPk(usuarioId);
+
+    const payment_data = {
+      transaction_amount: Number(pedido.total),
+      token: token,
+      description: `Pedido #${pedido.id} - Buddy Boost`,
+      installments: Number(installments),
+      payment_method_id: payment_method_id,
+      issuer_id: String(issuer_id),
+      payer: {
+        email: usuario.email,
+        first_name: usuario.nome.split(' ')[0] || usuario.nome,
+        last_name: usuario.nome.split(' ').slice(1).join(' ') || 'Silva',
+        identification: {
+          type: payer.identification.type,
+          number: String(payer.identification.number).replace(/\D/g, ''),
         },
-        external_reference: pedido.id.toString(),
-        notification_url: `${process.env.BASE_URL}/api/pagamentos/webhook`,
-      };
+      },
+      external_reference: String(pedido.id),
+      notification_url: `${process.env.BASE_URL}/api/pagamentos/webhook`,
+      statement_descriptor: "BUDDYBOOST",
+    };
 
-      const paymentResponse = await mercadopago.payment.create(payment_data);
-      const paymentResult = paymentResponse.body;
+    console.log('📤 Enviando para Mercado Pago:', JSON.stringify(payment_data, null, 2));
 
-      await Pagamento.create({
-        pedidoId,
-        usuarioId,
-        valor: paymentResult.transaction_amount,
-        metodo: "mercado_pago_api_card",
-        status: paymentResult.status === 'approved' ? 'aprovado' : paymentResult.status,
-        transacaoId: paymentResult.id,
-        dadosTransacao: paymentResult,
-      });
+    const paymentResponse = await mercadopago.payment.create(payment_data);
+    const paymentResult = paymentResponse.body;
 
-      if (paymentResult.status === 'approved') {
-        await pedidoService.atualizarStatusPedido(pedido.id, "pago");
-        facebookCapiService.sendPurchaseEvent(pedido, usuario);
-      } else {
-        await pedido.update({ status: 'cancelado' }); // Ou outro status de falha
-      }
+    console.log('📥 Resposta do Mercado Pago:', paymentResult);
 
-      return {
-        status: paymentResult.status,
-        status_detail: paymentResult.status_detail,
-        id: paymentResult.id,
-      };
+    await Pagamento.create({
+      pedidoId,
+      usuarioId,
+      valor: paymentResult.transaction_amount,
+      metodo: "mercado_pago_api_card",
+      status: paymentResult.status === 'approved' ? 'aprovado' : paymentResult.status,
+      transacaoId: paymentResult.id,
+      dadosTransacao: paymentResult,
+    });
 
-    } catch (error) {
-      console.error("Erro ao processar pagamento com cartão:", error.response ? error.response.data : error.message);
-      throw new Error("Falha ao processar o pagamento com cartão.");
+    if (paymentResult.status === 'approved') {
+      await pedidoService.atualizarStatusPedido(pedido.id, "pago");
+      facebookCapiService.sendPurchaseEvent(pedido, usuario);
+    } else if (paymentResult.status === 'rejected') {
+      await pedido.update({ status: 'cancelado' });
     }
-  },
 
+    return {
+      status: paymentResult.status,
+      status_detail: paymentResult.status_detail,
+      id: paymentResult.id,
+    };
+
+  } catch (error) {
+    console.error("❌ Erro ao processar pagamento com cartão:", error.response?.data || error.message);
+    console.error("❌ Stack:", error.stack);
+    
+    // Retornar detalhes do erro do Mercado Pago
+    if (error.response?.data) {
+      throw new Error(JSON.stringify(error.response.data));
+    }
+    
+    throw new Error("Falha ao processar o pagamento com cartão: " + error.message);
+  }
+},
 
     async gerarPagamentoPix(pedidoId, usuarioId) {
     try {

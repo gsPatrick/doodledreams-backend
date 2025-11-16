@@ -8,30 +8,38 @@ const pagamentoController = {
    * Orquestra o processamento de um pagamento (cartão ou pix).
    * É chamado pela rota POST /processar.
    */
-  async processarPagamento(req, res, next) {
-    try {
-      const { payment_method, ...dados } = req.body;
-      const usuarioId = req.usuario.id;
+ async processarPagamento(req, res, next) {
+  try {
+    const { payment_method, ...dados } = req.body;
+    const usuarioId = req.usuario.id;
 
-      if (!payment_method || !dados.pedidoId) {
-        return res.status(400).json({ erro: "Método de pagamento e ID do pedido são obrigatórios." });
-      }
+    console.log('🎯 Processando pagamento:', { payment_method, pedidoId: dados.pedidoId, dados });
 
-      let resultado;
-
-      if (payment_method === 'card') {
-        resultado = await pagamentoService.processarPagamentoCartao(dados, usuarioId);
-      } else if (payment_method === 'pix') {
-        resultado = await pagamentoService.gerarPagamentoPix(dados.pedidoId, usuarioId);
-      } else {
-        return res.status(400).json({ erro: "Método de pagamento inválido." });
-      }
-
-      res.status(201).json(resultado);
-    } catch (error) {
-      next(error);
+    if (!payment_method || !dados.pedidoId) {
+      return res.status(400).json({ erro: "Método de pagamento e ID do pedido são obrigatórios." });
     }
-  },
+
+    let resultado;
+
+    if (payment_method === 'card') {
+      resultado = await pagamentoService.processarPagamentoCartao(dados, usuarioId);
+    } else if (payment_method === 'pix') {
+      resultado = await pagamentoService.gerarPagamentoPix(dados.pedidoId, usuarioId);
+    } else {
+      return res.status(400).json({ erro: "Método de pagamento inválido." });
+    }
+
+    res.status(201).json(resultado);
+  } catch (error) {
+    console.error('❌ Erro no controller de pagamento:', error.message);
+    console.error('❌ Stack:', error.stack);
+    
+    res.status(500).json({ 
+      erro: 'Erro interno do servidor', 
+      message: error.message 
+    });
+  }
+},
 
   /**
    * Orquestra a criação de uma assinatura.
