@@ -24,7 +24,7 @@ const pagamentoController = {
     if (payment_method === 'card') {
       resultado = await pagamentoService.processarPagamentoCartao(dados, usuarioId);
     } else if (payment_method === 'pix') {
-      resultado = await pagamentoService.gerarPagamentoPix(dados.pedidoId, usuarioId);
+      resultado = await pagamentoService.gerarPagamentoPix(dados, usuarioId);
     } else {
       return res.status(400).json({ erro: "Método de pagamento inválido." });
     }

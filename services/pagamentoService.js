@@ -200,8 +200,14 @@ const pagamentoService = {
   }
 },
 
-    async gerarPagamentoPix(pedidoId, usuarioId) {
+  async gerarPagamentoPix(dados, usuarioId) { // Modificado para receber 'dados'
     try {
+      const { pedidoId, payer } = dados; // Extrai o pedidoId e o objeto payer
+
+      if (!payer || !payer.identification || !payer.identification.number) {
+        throw new Error("CPF do pagador é obrigatório para gerar Pix.");
+      }
+
       const pedido = await Pedido.findOne({ where: { id: pedidoId, usuarioId } });
       if (!pedido) throw new Error("Pedido não encontrado ou não pertence ao usuário.");
       if (pedido.status !== 'pendente') throw new Error("Este pedido já foi processado.");
@@ -209,7 +215,7 @@ const pagamentoService = {
       const usuario = await Usuario.findByPk(usuarioId);
       
       const expirationDate = new Date();
-      expirationDate.setMinutes(expirationDate.getMinutes() + 30); // 30 minutos de validade
+      expirationDate.setMinutes(expirationDate.getMinutes() + 30);
 
       const payment_data = {
         transaction_amount: Number(pedido.total),
@@ -219,8 +225,11 @@ const pagamentoService = {
           email: usuario.email,
           first_name: usuario.nome.split(' ')[0],
           last_name: usuario.nome.split(' ').slice(1).join(' '),
-          // O Mercado Pago exige CPF para PIX. O ideal é que ele esteja no cadastro do usuário.
-          // identification: { type: 'CPF', number: '19119119100' }, 
+          // --- CORREÇÃO APLICADA AQUI ---
+          identification: {
+            type: 'CPF',
+            number: String(payer.identification.number).replace(/\D/g, ''), // Usa o CPF vindo do frontend
+          },
         },
         external_reference: pedido.id.toString(),
         notification_url: `${process.env.BASE_URL}/api/pagamentos/webhook`,
@@ -251,6 +260,7 @@ const pagamentoService = {
       throw new Error("Falha ao gerar o pagamento PIX.");
     }
   },
+
 
 
    async criarAssinaturaComCartao(dados, usuarioId) {
