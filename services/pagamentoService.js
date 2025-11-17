@@ -100,28 +100,30 @@ const pagamentoService = {
     }
   },
 
-   async processarPagamentoCartao(dados, usuarioId) {
+  async processarPagamentoCartao(dados, usuarioId) {
   try {
     const { pedidoId, token, payment_method_id, issuer_id, installments, payer } = dados;
 
-    console.log('🔍 Dados recebidos:', { pedidoId, token, payment_method_id, issuer_id, installments });
+    // --- LOGS DE DEBUG ---
+    console.log('🔍 [INÍCIO] Processando pagamento com cartão...');
+    console.log('   Dados recebidos do controller:', { pedidoId, token, payment_method_id, issuer_id, installments, payer });
 
-    // VALIDAÇÕES
+    // --- VALIDAÇÕES DE ENTRADA ---
     if (!token) throw new Error("Token do cartão não fornecido");
-    if (!payment_method_id) throw new Error("payment_method_id não fornecido");
-    if (!issuer_id) throw new Error("issuer_id não fornecido");
-    if (!payer || !payer.identification) throw new Error("Dados do pagador incompletos");
+    if (!payment_method_id) throw new Error("ID do método de pagamento (payment_method_id) não fornecido");
+    if (!issuer_id) throw new Error("ID do emissor (issuer_id) não fornecido");
+    if (!payer || !payer.identification || !payer.email) throw new Error("Dados do pagador (email e documento) estão incompletos");
 
+    // --- BUSCA E VALIDAÇÃO DAS ENTIDADES ---
     const pedido = await Pedido.findOne({ where: { id: pedidoId, usuarioId } });
-    if (!pedido) throw new Error("Pedido não encontrado ou não pertence ao usuário.");
-    if (pedido.status !== 'pendente') throw new Error("Este pedido já foi processado.");
+    if (!pedido) throw new Error(`Pedido ID ${pedidoId} não encontrado ou não pertence ao usuário ID ${usuarioId}.`);
+    if (pedido.status !== 'pendente') throw new Error(`Este pedido (ID: ${pedidoId}) já foi processado. Status atual: ${pedido.status}.`);
 
     const usuario = await Usuario.findByPk(usuarioId);
+    if (!usuario) throw new Error(`Usuário ID ${usuarioId} não encontrado.`);
 
-    // CORREÇÃO: Garantir que o número de identificação seja apenas números
+    // --- PREPARAÇÃO DOS DADOS PARA A API ---
     const identificationNumberClean = String(payer.identification.number).replace(/\D/g, '');
-    
-    // VALIDAÇÃO ADICIONAL: O Mercado Pago exige o número de identificação para pagamentos com cartão.
     if (!identificationNumberClean) throw new Error("Número de identificação (CPF/CNPJ) do pagador é obrigatório.");
 
     const payment_data = {
@@ -132,12 +134,12 @@ const pagamentoService = {
       payment_method_id: payment_method_id,
       issuer_id: String(issuer_id),
       payer: {
-        email: usuario.email,
+        email: payer.email,
         first_name: usuario.nome.split(' ')[0] || usuario.nome,
-        last_name: usuario.nome.split(' ').slice(1).join(' ') || 'Silva',
+        last_name: usuario.nome.split(' ').slice(1).join(' ') || 'N/A', // Adicionado fallback
         identification: {
           type: payer.identification.type,
-          number: identificationNumberClean, // Usar o número limpo
+          number: identificationNumberClean,
         },
       },
       external_reference: String(pedido.id),
@@ -145,13 +147,15 @@ const pagamentoService = {
       statement_descriptor: "BUDDYBOOST",
     };
 
-    console.log('📤 Enviando para Mercado Pago:', JSON.stringify(payment_data, null, 2));
+    console.log('📤 [API_CALL] Enviando payload para o Mercado Pago:', JSON.stringify(payment_data, null, 2));
 
+    // --- CHAMADA À API DO MERCADO PAGO ---
     const paymentResponse = await mercadopago.payment.create(payment_data);
     const paymentResult = paymentResponse.body;
 
-    console.log('📥 Resposta do Mercado Pago:', paymentResult);
+    console.log('📥 [API_RESPONSE] Resposta recebida do Mercado Pago:', paymentResult);
 
+    // --- PERSISTÊNCIA NO BANCO DE DADOS ---
     await Pagamento.create({
       pedidoId,
       usuarioId,
@@ -161,14 +165,22 @@ const pagamentoService = {
       transacaoId: paymentResult.id,
       dadosTransacao: paymentResult,
     });
+    console.log(`   Registro de pagamento criado no banco para o pedido ID ${pedidoId}.`);
 
+    // --- ATUALIZAÇÃO DE STATUS E PÓS-PAGAMENTO ---
     if (paymentResult.status === 'approved') {
       await pedidoService.atualizarStatusPedido(pedido.id, "pago");
+      console.log(`   Status do pedido ID ${pedido.id} atualizado para 'pago'.`);
+      // Dispara evento para o Pixel do Facebook
       facebookCapiService.sendPurchaseEvent(pedido, usuario);
     } else if (paymentResult.status === 'rejected') {
       await pedido.update({ status: 'cancelado' });
+      console.log(`   Pagamento rejeitado. Status do pedido ID ${pedido.id} atualizado para 'cancelado'.`);
     }
 
+    console.log('✅ [FIM] Processamento de pagamento com cartão finalizado com sucesso.');
+    
+    // --- RETORNO PARA O CONTROLLER ---
     return {
       status: paymentResult.status,
       status_detail: paymentResult.status_detail,
@@ -176,17 +188,15 @@ const pagamentoService = {
     };
 
   } catch (error) {
-    console.error("❌ Erro ao processar pagamento com cartão:", error.response?.data || error.message);
-    console.error("❌ Stack:", error.stack);
-    
-    // Retornar detalhes do erro do Mercado Pago
+    // --- TRATAMENTO DE ERROS DETALHADO ---
+    console.error("❌ [ERRO] Erro ao processar pagamento com cartão:", error.message);
     if (error.response?.data) {
-      // O Mercado Pago retorna um array de erros em error.response.data.cause
-      const mpError = error.response.data.cause ? error.response.data.cause[0].description : error.response.data.message;
+      console.error("   Detalhes do erro do Mercado Pago:", JSON.stringify(error.response.data, null, 2));
+      const mpError = error.response.data.cause?.[0]?.description || error.response.data.message || "Erro desconhecido do provedor de pagamento.";
       throw new Error(`Falha no pagamento: ${mpError}`);
     }
     
-    throw new Error("Falha ao processar o pagamento com cartão: " + error.message);
+    throw new Error("Falha ao processar o pagamento com cartão.");
   }
 },
 
