@@ -59,7 +59,6 @@ const pagamentoService = {
         });
       }
 
-      // --- USANDO A NOVA FUNÇÃO DE DATA ---
       const now = new Date();
       const expirationDate = new Date(now.getTime() + (24 * 60 * 60 * 1000)); // Expira em 24 horas
 
@@ -74,9 +73,8 @@ const pagamentoService = {
         auto_return: "approved",
         external_reference: pedidoId.toString(),
         notification_url: `${process.env.BASE_URL}/api/pagamentos/webhook`,
-        statement_descriptor: "ATELIERAISA"
+        statement_descriptor: "BUDDYBOOST"
       };
-      //teste
 
       const response = await mercadopago.preferences.create(preference);
 
@@ -104,17 +102,14 @@ const pagamentoService = {
   try {
     const { pedidoId, token, payment_method_id, issuer_id, installments, payer } = dados;
 
-    // --- LOGS DE DEBUG ---
     console.log('🔍 [INÍCIO] Processando pagamento com cartão...');
     console.log('   Dados recebidos do controller:', { pedidoId, token, payment_method_id, issuer_id, installments, payer });
 
-    // --- VALIDAÇÕES DE ENTRADA ---
     if (!token) throw new Error("Token do cartão não fornecido");
     if (!payment_method_id) throw new Error("ID do método de pagamento (payment_method_id) não fornecido");
     if (!issuer_id) throw new Error("ID do emissor (issuer_id) não fornecido");
     if (!payer || !payer.identification || !payer.email) throw new Error("Dados do pagador (email e documento) estão incompletos");
 
-    // --- BUSCA E VALIDAÇÃO DAS ENTIDADES ---
     const pedido = await Pedido.findOne({ where: { id: pedidoId, usuarioId } });
     if (!pedido) throw new Error(`Pedido ID ${pedidoId} não encontrado ou não pertence ao usuário ID ${usuarioId}.`);
     if (pedido.status !== 'pendente') throw new Error(`Este pedido (ID: ${pedidoId}) já foi processado. Status atual: ${pedido.status}.`);
@@ -122,9 +117,12 @@ const pagamentoService = {
     const usuario = await Usuario.findByPk(usuarioId);
     if (!usuario) throw new Error(`Usuário ID ${usuarioId} não encontrado.`);
 
-    // --- PREPARAÇÃO DOS DADOS PARA A API ---
     const identificationNumberClean = String(payer.identification.number).replace(/\D/g, '');
     if (!identificationNumberClean) throw new Error("Número de identificação (CPF/CNPJ) do pagador é obrigatório.");
+
+    // Correção do nome/sobrenome para evitar erros do Mercado Pago
+    const primeiroNome = usuario.nome.split(' ')[0] || 'Cliente';
+    const ultimoNome = usuario.nome.includes(' ') ? usuario.nome.split(' ').slice(1).join(' ') : 'Sobrenome';
 
     const payment_data = {
       transaction_amount: Number(pedido.total),
@@ -135,8 +133,8 @@ const pagamentoService = {
       issuer_id: String(issuer_id),
       payer: {
         email: payer.email,
-        first_name: usuario.nome.split(' ')[0] || usuario.nome,
-        last_name: usuario.nome.split(' ').slice(1).join(' ') || 'N/A', // Adicionado fallback
+        first_name: primeiroNome,
+        last_name: ultimoNome,
         identification: {
           type: payer.identification.type,
           number: identificationNumberClean,
@@ -149,13 +147,11 @@ const pagamentoService = {
 
     console.log('📤 [API_CALL] Enviando payload para o Mercado Pago:', JSON.stringify(payment_data, null, 2));
 
-    // --- CHAMADA À API DO MERCADO PAGO ---
     const paymentResponse = await mercadopago.payment.create(payment_data);
     const paymentResult = paymentResponse.body;
 
     console.log('📥 [API_RESPONSE] Resposta recebida do Mercado Pago:', paymentResult);
 
-    // --- PERSISTÊNCIA NO BANCO DE DADOS ---
     await Pagamento.create({
       pedidoId,
       usuarioId,
@@ -167,11 +163,9 @@ const pagamentoService = {
     });
     console.log(`   Registro de pagamento criado no banco para o pedido ID ${pedidoId}.`);
 
-    // --- ATUALIZAÇÃO DE STATUS E PÓS-PAGAMENTO ---
     if (paymentResult.status === 'approved') {
       await pedidoService.atualizarStatusPedido(pedido.id, "pago");
       console.log(`   Status do pedido ID ${pedido.id} atualizado para 'pago'.`);
-      // Dispara evento para o Pixel do Facebook
       facebookCapiService.sendPurchaseEvent(pedido, usuario);
     } else if (paymentResult.status === 'rejected') {
       await pedido.update({ status: 'cancelado' });
@@ -180,7 +174,6 @@ const pagamentoService = {
 
     console.log('✅ [FIM] Processamento de pagamento com cartão finalizado com sucesso.');
     
-    // --- RETORNO PARA O CONTROLLER ---
     return {
       status: paymentResult.status,
       status_detail: paymentResult.status_detail,
@@ -188,7 +181,6 @@ const pagamentoService = {
     };
 
   } catch (error) {
-    // --- TRATAMENTO DE ERROS DETALHADO ---
     console.error("❌ [ERRO] Erro ao processar pagamento com cartão:", error.message);
     if (error.response?.data) {
       console.error("   Detalhes do erro do Mercado Pago:", JSON.stringify(error.response.data, null, 2));
@@ -200,9 +192,9 @@ const pagamentoService = {
   }
 },
 
-  async gerarPagamentoPix(dados, usuarioId) { // Modificado para receber 'dados'
+  async gerarPagamentoPix(dados, usuarioId) { 
     try {
-      const { pedidoId, payer } = dados; // Extrai o pedidoId e o objeto payer
+      const { pedidoId, payer } = dados; 
 
       if (!payer || !payer.identification || !payer.identification.number) {
         throw new Error("CPF do pagador é obrigatório para gerar Pix.");
@@ -217,24 +209,32 @@ const pagamentoService = {
       const expirationDate = new Date();
       expirationDate.setMinutes(expirationDate.getMinutes() + 30);
 
+      // CORREÇÃO CRÍTICA: Garantir que last_name nunca seja vazio
+      const primeiroNome = usuario.nome.split(' ')[0] || 'Cliente';
+      // Se não tiver sobrenome, usamos 'Sobrenome' ou repetimos o nome para satisfazer a API
+      const ultimoNome = usuario.nome.includes(' ') ? usuario.nome.split(' ').slice(1).join(' ') : 'Sobrenome';
+      
+      const cpfLimpo = String(payer.identification.number).replace(/\D/g, '');
+
       const payment_data = {
         transaction_amount: Number(pedido.total),
         description: `Pedido #${pedido.id} - Buddy Boost`,
         payment_method_id: 'pix',
         payer: {
           email: usuario.email,
-          first_name: usuario.nome.split(' ')[0],
-          last_name: usuario.nome.split(' ').slice(1).join(' '),
-          // --- CORREÇÃO APLICADA AQUI ---
+          first_name: primeiroNome,
+          last_name: ultimoNome,
           identification: {
             type: 'CPF',
-            number: String(payer.identification.number).replace(/\D/g, ''), // Usa o CPF vindo do frontend
+            number: cpfLimpo, 
           },
         },
         external_reference: pedido.id.toString(),
         notification_url: `${process.env.BASE_URL}/api/pagamentos/webhook`,
         date_of_expiration: expirationDate.toISOString().replace('Z', '-03:00'),
       };
+
+      console.log('Enviando dados Pix para MP:', JSON.stringify(payment_data, null, 2));
 
       const paymentResponse = await mercadopago.payment.create(payment_data);
       const paymentResult = paymentResponse.body;
@@ -256,12 +256,24 @@ const pagamentoService = {
       };
 
     } catch (error) {
-      console.error("Erro ao gerar pagamento PIX:", error.response ? error.response.data : error.message);
-      throw new Error("Falha ao gerar o pagamento PIX.");
+      // LOG DETALHADO PARA O CONSOLE DO SERVIDOR
+      console.error("Erro ao gerar pagamento PIX (Detalhes):", error);
+      if (error.response && error.response.data) {
+          console.error("Resposta de erro do Mercado Pago:", JSON.stringify(error.response.data, null, 2));
+          
+          // Tenta extrair a mensagem exata do erro
+          const causa = error.response.data.cause;
+          if (causa && causa.length > 0) {
+             const msgErro = causa[0].description || causa[0].code;
+             throw new Error(`Erro Mercado Pago: ${msgErro}`);
+          }
+          throw new Error(`Erro Mercado Pago: ${error.response.data.message}`);
+      }
+      
+      // Lança o erro original se tiver mensagem, ou o genérico
+      throw new Error(error.message || "Falha ao gerar o pagamento PIX.");
     }
   },
-
-
 
    async criarAssinaturaComCartao(dados, usuarioId) {
     try {
