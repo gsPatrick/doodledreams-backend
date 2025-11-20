@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pedidoController = require('../controllers/pedidoController');
-const { verificarToken, isAdmin } = require('../middlewares/authMiddleware');
+const { verifyToken, isAdmin } = require("../middleware/auth");
 
 // --- ROTAS DO CLIENTE ---
 
