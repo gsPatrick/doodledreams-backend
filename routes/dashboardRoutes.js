@@ -1,14 +1,21 @@
-const express = require("express")
-const dashboardController = require("../controllers/dashboardController")
-const { verifyToken, isAdmin } = require("../middleware/auth")
+const express = require('express');
+const router = express.Router();
+const dashboardController = require('../controllers/dashboardController');
+const { verificarToken, isAdmin } = require('../middlewares/authMiddleware');
 
-const router = express.Router()
+// Todas as rotas de dashboard devem ser protegidas para admin
+router.use(verificarToken, isAdmin);
 
-router.use(verifyToken, isAdmin) // Apenas admins
+// Metricas gerais (KPIs)
+router.get('/metricas', dashboardController.obterMetricas);
 
-router.get("/metricas", dashboardController.obterMetricas)
-router.get("/vendas", dashboardController.obterVendasPorPeriodo)
-router.get("/produtos-mais-vendidos", dashboardController.obterProdutosMaisVendidos)
-router.get("/clientes-top", dashboardController.obterClientesTop)
+// Gráfico de vendas
+router.get('/vendas-periodo', dashboardController.obterVendasPorPeriodo);
 
-module.exports = router
+// Produtos mais vendidos
+router.get('/produtos-mais-vendidos', dashboardController.obterProdutosMaisVendidos);
+
+// Clientes TOP
+router.get('/clientes-top', dashboardController.obterClientesTop);
+
+module.exports = router;
