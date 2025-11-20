@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const dashboardController = require('../controllers/dashboardController');
-const { verificarToken, isAdmin } = require('../middlewares/authMiddleware');
+const { verifyToken, isAdmin } = require("../middleware/auth")
 
 // Todas as rotas de dashboard devem ser protegidas para admin
-router.use(verificarToken, isAdmin);
+router.use(verifyToken, isAdmin);
 
 // Metricas gerais (KPIs)
 router.get('/metricas', dashboardController.obterMetricas);
