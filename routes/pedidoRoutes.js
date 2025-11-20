@@ -6,7 +6,7 @@ const { verifyToken, isAdmin } = require("../middleware/auth");
 // --- ROTAS DO CLIENTE ---
 
 // Criar um novo pedido
-router.post('/', verifyToken, pedidoController.criarPedido);
+router.post('/', verifyToken, pedidoController.criarPedido); //teste
 
 // Listar pedidos do usuário logado
 router.get('/meus-pedidos', verifyToken, pedidoController.listarPedidosCliente);
