@@ -1,26 +1,48 @@
-const express = require("express");
-const pedidoController = require("../controllers/pedidoController");
-const { verifyToken, isAdmin } = require("../middleware/auth");
-
+const express = require('express');
 const router = express.Router();
+const pedidoController = require('../controllers/pedidoController');
+const { verificarToken, isAdmin } = require('../middlewares/authMiddleware');
 
-// TODAS as rotas de pedido, incluindo a de criação, requerem autenticação
-router.use(verifyToken); // <<-- MANTER ESTE MIDDLEWARE AQUI
+// --- ROTAS DO CLIENTE ---
 
-// Rotas do cliente
-router.get("/meus-pedidos", pedidoController.listarPedidosCliente);
-router.get("/:id", pedidoController.buscarPedido);
-router.post("/", pedidoController.criarPedido); // <<-- AGORA SEMPRE EXIGE USUARIO LOGADO
-router.delete("/:id", pedidoController.cancelarPedido);
-router.get("/meus/downloads", pedidoController.obterDownloadsUsuario);
+// Criar um novo pedido
+router.post('/', verificarToken, pedidoController.criarPedido);
 
-// Rotas de Admin
-router.use(isAdmin); // A partir daqui, precisa ser admin
-router.get("/", pedidoController.listarPedidosAdmin);
-router.put("/:id/status", pedidoController.atualizarStatus);
-router.put("/:id/nota-interna", pedidoController.adicionarNotaInterna);
-router.post("/:id/etiqueta", pedidoController.gerarEtiqueta);
-router.post("/etiqueta/comprar", pedidoController.comprarEtiqueta);
-router.post("/etiqueta/imprimir", pedidoController.imprimirEtiqueta);
+// Listar pedidos do usuário logado
+router.get('/meus-pedidos', verificarToken, pedidoController.listarPedidosCliente);
+
+// Listar produtos digitais (downloads) disponíveis para o usuário
+router.get('/meus-downloads', verificarToken, pedidoController.obterDownloadsUsuario);
+
+// --- ROTAS DO ADMINISTRADOR ---
+
+// Listar todos os pedidos do sistema (Painel Admin)
+router.get('/admin', verificarToken, isAdmin, pedidoController.listarPedidosAdmin);
+
+// Atualizar status do pedido (ex: enviado, entregue)
+router.put('/:id/status', verificarToken, isAdmin, pedidoController.atualizarStatus);
+
+// Adicionar nota interna ao pedido (visível apenas para admins)
+router.post('/:id/nota', verificarToken, isAdmin, pedidoController.adicionarNotaInterna);
+
+// --- ROTAS DE ETIQUETAS / FRETE (ADMIN) ---
+
+// Gerar cotação/prévia da etiqueta para um pedido
+router.post('/:id/etiqueta', verificarToken, isAdmin, pedidoController.gerarEtiqueta);
+
+// Comprar etiqueta (transação real com a transportadora)
+router.post('/etiqueta/comprar', verificarToken, isAdmin, pedidoController.comprarEtiqueta);
+
+// Obter link/PDF da etiqueta para impressão
+router.post('/etiqueta/imprimir', verificarToken, isAdmin, pedidoController.imprimirEtiqueta);
+
+// --- ROTAS COMUNS (ID) ---
+// Importante: Devem ficar por último para não conflitar com rotas fixas como 'admin' ou 'meus-pedidos'
+
+// Buscar detalhes de um pedido específico
+router.get('/:id', verificarToken, pedidoController.buscarPedido);
+
+// Cancelar um pedido (Cliente pode cancelar se pendente, Admin pode forçar)
+router.post('/:id/cancelar', verificarToken, pedidoController.cancelarPedido);
 
 module.exports = router;
