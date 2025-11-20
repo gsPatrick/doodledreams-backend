@@ -1,4 +1,4 @@
-const { Pedido, Produto, Usuario, Pagamento, VariacaoProduto, ArquivoProduto } = require("../models")
+const { Pedido, Produto, Usuario, Pagamento, ArquivoProduto } = require("../models")
 const { Op, Sequelize } = require("sequelize")
 const sequelize = require("../config/database").sequelize
 
@@ -58,18 +58,14 @@ const dashboardService = {
       })
 
       // Produtos com estoque baixo (menos de 10)
-      const produtos = await Produto.findAll({
-        include: [{ model: VariacaoProduto, as: 'variacoes', required: true }],
-        where: { ativo: true },
+      // CORREÇÃO: Busca direta na tabela Produto, pois VariacaoProduto foi removido
+      const countEstoqueBaixo = await Produto.count({
+        where: {
+            ativo: true,
+            estoque: { [Op.lt]: 10 } // Menor que 10
+        }
       });
-      // Considera estoque baixo se a primeira variação tiver estoque < 10
-      const produtosEstoqueBaixo = produtos.filter(produto => {
-        const variacao = produto.variacoes && produto.variacoes.length > 0 ? produto.variacoes[0] : null;
-        return variacao && variacao.estoque < 10;
-      });
-      const countEstoqueBaixo = produtosEstoqueBaixo.length;
 
-      // Retorno simplificado para match com front-end
       // Contar número de pedidos pagos hoje
       const inicioDia = new Date()
       inicioDia.setHours(0, 0, 0, 0)
@@ -79,13 +75,16 @@ const dashboardService = {
           createdAt: { [Op.gte]: inicioDia },
         },
       })
+      
       return {
         vendasHoje: vendasHojeCount,
         faturamentoHoje: Number.parseFloat(vendasHoje || 0),
         clientesTotal: totalUsuarios,
         produtosTotal: totalProdutos,
+        estoqueBaixo: countEstoqueBaixo
       }
     } catch (error) {
+      console.error("Erro ao obter métricas gerais:", error);
       throw error
     }
   },
@@ -180,7 +179,8 @@ const dashboardService = {
         .sort((a, b) => b.quantidade - a.quantidade)
         .slice(0, limit)
 
-      // Buscar informações detalhadas dos produtos, incluindo variações
+      // Buscar informações detalhadas dos produtos
+      // CORREÇÃO: Removida a inclusão de VariacaoProduto
       const produtosDetalhados = await Promise.all(
         produtosOrdenados.map(async (item) => {
           const produto = await Produto.findByPk(item.produtoId, {
@@ -189,11 +189,6 @@ const dashboardService = {
                 model: ArquivoProduto,
                 as: 'ArquivoProdutos',
                 where: { tipo: 'imagem' },
-                required: false
-              },
-              {
-                model: VariacaoProduto,
-                as: 'variacoes',
                 required: false
               }
             ]
