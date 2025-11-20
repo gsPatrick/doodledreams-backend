@@ -9,19 +9,13 @@ require("dotenv").config()
 const pedidoController = {
  async criarPedido(req, res, next) {
     try {
-      // O ID do usuário vem do middleware de autenticação (req.user ou req.usuario)
       const usuarioId = req.user.id; 
-      
-      // Extrai todos os dados necessários do corpo da requisição
       const { itens, enderecoEntrega, freteId, cupomCodigo } = req.body;
 
-      // Validação básica de entrada
       if (!itens || !Array.isArray(itens) || itens.length === 0) {
         return res.status(400).json({ erro: "O campo 'itens' é obrigatório e não pode estar vazio." });
       }
-      // O serviço já valida se o endereço é necessário para produtos físicos
 
-      // Chama o serviço com todos os parâmetros
       const novoPedido = await pedidoService.criarPedido(
         usuarioId,
         itens,
@@ -32,7 +26,6 @@ const pedidoController = {
 
       res.status(201).json(novoPedido);
     } catch (error) {
-      // Passa o erro para o middleware de tratamento de erros
       next(error);
     }
   },
@@ -58,7 +51,6 @@ const pedidoController = {
       const { id } = req.params
       const usuarioId = req.usuario.id
 
-      // Verificar se o pedido pertence ao usuário (exceto admin)
       if (req.usuario.tipo !== "admin") {
         const pedidoExistente = await pedidoService.buscarPedidoPorId(id)
         if (!pedidoExistente || pedidoExistente.usuarioId !== usuarioId) {
@@ -95,15 +87,25 @@ const pedidoController = {
   async buscarPedido(req, res, next) {
     try {
       const { id } = req.params
+      
+      // Validação básica do ID
+      if (!id || id === 'undefined' || id === 'null') {
+        return res.status(400).json({ erro: "ID do pedido inválido fornecido." });
+      }
+
       const pedido = await pedidoService.buscarPedidoPorId(id)
 
       // Verificar se o pedido pertence ao usuário (exceto admin)
       if (req.usuario.tipo !== "admin" && (!pedido || pedido.usuarioId !== req.usuario.id)) {
-        return res.status(403).json({ erro: "Acesso negado" })
+        return res.status(403).json({ erro: "Acesso negado. Este pedido não pertence a você." })
       }
 
       res.json(pedido)
     } catch (error) {
+      // Tratamento específico para 404
+      if (error.message === "Pedido não encontrado") {
+        return res.status(404).json({ erro: "Pedido não encontrado." });
+      }
       next(error)
     }
   },
@@ -112,14 +114,15 @@ const pedidoController = {
     try {
       const { id } = req.params
       const { nota } = req.body
-      const pedido = await pedidoService.buscarPedidoPorId(id)
-      if (!pedido) {
-          return res.status(404).json({ erro: "Pedido não encontrado" });
-      }
+      const pedido = await pedidoService.buscarPedidoPorId(id) // O Service já lança erro se não achar
+      
       pedido.obsInterna = nota
       await pedido.save()
       res.json(pedido)
     } catch (error) {
+      if (error.message === "Pedido não encontrado") {
+        return res.status(404).json({ erro: "Pedido não encontrado." });
+      }
       next(error)
     }
   },
@@ -128,15 +131,12 @@ const pedidoController = {
     try {
       const { id } = req.params
       const pedido = await pedidoService.buscarPedidoPorId(id)
-      if (!pedido) {
-          return res.status(404).json({ erro: "Pedido não encontrado" });
-      }
+      
       const enderecoDestino = pedido.enderecoEntrega
       const enderecoOrigem = await configuracaoLojaService.obterEnderecoOrigem()
 
-      // Validação para garantir que o endereço de origem está configurado
       if (!enderecoOrigem || !enderecoOrigem.cep) {
-        throw new Error("Endereço de origem não configurado no sistema. Por favor, configure os dados da loja no painel de administração.");
+        throw new Error("Endereço de origem não configurado no sistema.");
       }
 
       const etiqueta = await freteService.gerarEtiqueta(id, enderecoOrigem, enderecoDestino, pedido.itens)
@@ -154,10 +154,6 @@ const pedidoController = {
       }
       
       const resultado = await freteService.comprarEtiqueta([etiquetaId])
-      
-      // Aqui, você pode querer salvar o código de rastreio no seu pedido
-      // Ex: await pedidoService.salvarRastreio(pedidoId, resultado.tracking);
-      
       res.json(resultado)
     } catch (error) {
       next(error)

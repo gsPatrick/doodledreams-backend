@@ -1,13 +1,16 @@
-const { Pedido, Usuario, Produto, Pagamento, ArquivoProduto, Frete } = require("../models")
-const { enviarEmail, templateConfirmacaoPedido } = require("../utils/email")
-const cupomService = require("./cupomService")
-const notificacaoService = require("./notificacaoService")
-const pagamentoService = require("./pagamentoService")
-const freteService = require("./freteService")
-const configuracaoLojaService = require("./configuracaoLojaService")
+// src/services/pedidoService.js
+
+const { Pedido, Usuario, Produto, Pagamento, ArquivoProduto, Frete, Cupom } = require("../models");
+const { enviarEmail, templateConfirmacaoPedido } = require("../utils/email");
+const cupomService = require("./cupomService");
+const notificacaoService = require("./notificacaoService");
+const freteService = require("./freteService");
+const configuracaoLojaService = require("./configuracaoLojaService");
 const { Op } = require('sequelize');
+require("dotenv").config();
 
 const pedidoService = {
+  
   async criarPedido(usuarioId, itensPedido, enderecoEntrega, freteId, cupomCodigo = null) {
     try {
       let total = 0;
@@ -18,7 +21,7 @@ const pedidoService = {
       const itensProcessados = [];
       let quantidadeTotalItens = 0;
 
-      // 1. VERIFICAR SE O PEDIDO É TOTALMENTE DIGITAL
+      // 1. Identificar produtos e verificar se o pedido é 100% digital
       const produtoIds = itensPedido.map(item => item.produtoId);
       const produtosParaVerificacao = await Produto.findAll({ where: { id: { [Op.in]: produtoIds } } });
       
@@ -27,22 +30,27 @@ const pedidoService = {
       
       const todosDigitais = itensPedido.every(item => {
         const produto = produtoMap.get(item.produtoId);
-        return produto && produto.digital; // Assumindo que você adicionará o campo 'digital' ao modelo Produto
+        // Assume-se que o produto tenha um flag 'digital' ou verificamos se tem arquivo associado
+        // Aqui estamos usando a flag 'digital' que deve existir no modelo ou ser inferida
+        return produto && produto.digital; 
       });
 
+      // Se tiver itens físicos, endereço é obrigatório
       if (!todosDigitais && !enderecoEntrega) {
         throw new Error("Endereço de entrega é obrigatório para produtos físicos.");
       }
 
-      // 2. PROCESSAR ITENS, CALCULAR SUBTOTAL E VALIDAR ESTOQUE
+      // 2. Processar itens, calcular subtotal e validar estoque
       for (const item of itensPedido) {
         const produto = produtoMap.get(item.produtoId);
+        
         if (!produto || !produto.ativo) {
           throw new Error(`Produto com ID ${item.produtoId} não encontrado ou inativo.`);
         }
         
         const precoBase = produto.preco;
         
+        // Validação de estoque para produtos físicos
         if (!produto.digital && produto.estoque < item.quantidade) {
           throw new Error(`Estoque insuficiente para o produto "${produto.nome}".`);
         }
@@ -67,7 +75,7 @@ const pedidoService = {
         });
       }
 
-      // 3. VALIDAR E APLICAR CUPOM DE DESCONTO
+      // 3. Validar e aplicar cupom de desconto
       if (cupomCodigo) {
         const cupom = await cupomService.validarCupom(cupomCodigo, total, quantidadeTotalItens, usuarioId);
 
@@ -81,16 +89,25 @@ const pedidoService = {
         cupomAplicadoId = cupom.id;
       }
 
-      // 4. CALCULAR FRETE (SE NECESSÁRIO)
+      // 4. Calcular Frete (apenas se houver itens físicos)
       if (!todosDigitais) {
         const enderecoOrigem = await configuracaoLojaService.obterEnderecoOrigem();
+        
+        // Filtra apenas itens físicos para o cálculo
         const itensFisicos = itensPedido.filter(item => !produtoMap.get(item.produtoId)?.digital);
+        
         const opcoesFrete = await freteService.calcularFrete(enderecoOrigem, enderecoEntrega, itensFisicos);
         
         const freteSelecionado = opcoesFrete.find(opt => opt.id === freteId);
-        if (!freteSelecionado) throw new Error("Método de frete selecionado é inválido.");
+        
+        if (!freteSelecionado) {
+           // Fallback: Se o ID do frete não bater com o calculado na hora (ex: expiração),
+           // tenta recalcular ou lançar erro. Aqui lançamos erro.
+           throw new Error("Método de frete selecionado é inválido ou não está mais disponível.");
+        }
         
         valorFrete = parseFloat(freteSelecionado.price);
+        
         dadosFrete = { 
           servico: freteSelecionado.name, 
           valor: valorFrete, 
@@ -103,7 +120,7 @@ const pedidoService = {
       
       const totalFinal = total + valorFrete;
 
-      // 5. CRIAR O PEDIDO NO BANCO DE DADOS
+      // 5. Criar o Pedido
       const pedido = await Pedido.create({
         usuarioId,
         itens: itensProcessados,
@@ -116,16 +133,17 @@ const pedidoService = {
         status: "pendente",
       });
 
-      // 6. INCREMENTAR USO DO CUPOM
+      // 6. Incrementar uso do Cupom
       if (cupomAplicadoId) {
         await cupomService.incrementarUso(cupomAplicadoId);
       }
       
-      // 7. CRIAR REGISTRO DE FRETE E ATUALIZAR ESTOQUE
+      // 7. Criar registro de Frete e Baixar Estoque
       if (dadosFrete && !todosDigitais) {
         await Frete.create({ pedidoId: pedido.id, ...dadosFrete });
       }
       
+      // Atualiza estoque
       for (const item of itensProcessados) {
         if (!item.digital) {
             const produto = await Produto.findByPk(item.produtoId);
@@ -153,13 +171,19 @@ const pedidoService = {
         throw new Error("Pedido não encontrado")
       }
 
+      // Se o pedido for cancelado, devolver o uso do cupom
       if (pedido.status !== "cancelado" && status === "cancelado" && pedido.cupomAplicadoId) {
           await cupomService.decrementarUso(pedido.cupomAplicadoId);
       }
+      
+      // Se o pedido estava cancelado e voltou para outro status (raro, mas possível via admin), 
+      // deveríamos idealmente re-incrementar o cupom e re-baixar estoque, 
+      // mas por simplicidade focamos no cancelamento.
 
       pedido.status = status
       await pedido.save()
 
+      // Enviar notificações
       try {
         await notificacaoService.enviarAtualizacaoStatus(pedidoId, status)
       } catch (emailError) {
@@ -184,6 +208,7 @@ const pedidoService = {
     try {
       const { status, page = 1, limit = 10 } = filtros
       const where = {}
+      
       if (usuarioId != null) where.usuarioId = usuarioId
       if (status) where.status = status
 
@@ -197,25 +222,36 @@ const pedidoService = {
         order: [["createdAt", "DESC"]],
       })
 
+      // Enriquece os itens do pedido com imagens e detalhes atuais do produto
       const pedidosComDetalhes = await Promise.all(rows.map(async (pedido) => {
         const itensComDetalhes = await Promise.all(pedido.itens.map(async (item) => {
           const produto = await Produto.findByPk(item.produtoId, {
             include: [{ model: ArquivoProduto, as: 'ArquivoProdutos', where: { tipo: 'imagem', principal: true }, required: false }]
           });
           
-          const imagemUrl = produto?.ArquivoProdutos?.[0]?.url || null;
+          const baseUrl = process.env.BASE_URL || 'http://localhost:3045';
+          let imagemUrl = '/placeholder-produto.png';
+
+          if (produto?.ArquivoProdutos?.[0]?.url) {
+             // Garante URL absoluta se não estiver salva assim
+             imagemUrl = produto.ArquivoProdutos[0].url.startsWith('http') 
+                ? produto.ArquivoProdutos[0].url 
+                : new URL(produto.ArquivoProdutos[0].url.replace(/\\/g, '/'), baseUrl).href;
+          }
 
           return {
             ...item,
             produto: {
               id: produto ? produto.id : null,
-              nome: produto ? produto.nome : 'Produto não encontrado',
+              nome: produto ? produto.nome : 'Produto não encontrado (Removido)',
               imagemUrl: imagemUrl
             }
           };
         }));
         
-        return { ...pedido.toJSON(), itens: itensComDetalhes };
+        const pedidoJSON = pedido.toJSON();
+        pedidoJSON.itens = itensComDetalhes;
+        return pedidoJSON;
       }));
 
       return {
@@ -231,8 +267,16 @@ const pedidoService = {
   
   async buscarPedidoPorId(pedidoId) {
     try {
+      // Validação robusta para evitar erro de "undefined" no Sequelize
+      if (!pedidoId || pedidoId === 'undefined' || pedidoId === 'null') {
+         throw new Error("ID de pedido inválido fornecido para busca.");
+      }
+
       const pedido = await Pedido.findByPk(pedidoId, {
-        include: [{ model: Usuario, attributes: ["nome", "email"] }, { model: Pagamento }],
+        include: [
+          { model: Usuario, attributes: ["nome", "email"] }, 
+          { model: Pagamento, required: false }
+        ],
       })
 
       if (!pedido) {
@@ -248,13 +292,18 @@ const pedidoService = {
   async cancelarPedido(pedidoId) {
     try {
       const pedido = await Pedido.findByPk(pedidoId)
+      
       if (!pedido) throw new Error("Pedido não encontrado")
+      
       if (pedido.status === "entregue") throw new Error("Não é possível cancelar pedido já entregue")
+      if (pedido.status === "cancelado") throw new Error("Pedido já está cancelado")
 
-      if (pedido.cupomAplicadoId && pedido.status !== "cancelado") {
+      // Devolver uso do cupom
+      if (pedido.cupomAplicadoId) {
         await cupomService.decrementarUso(pedido.cupomAplicadoId);
       }
 
+      // Devolver estoque dos itens físicos
       for (const item of pedido.itens) {
         if (!item.digital) {
             const produto = await Produto.findByPk(item.produtoId)
@@ -267,6 +316,7 @@ const pedidoService = {
 
       pedido.status = "cancelado"
       await pedido.save()
+      
       return pedido
     } catch (error) {
       throw error
@@ -285,7 +335,7 @@ const pedidoService = {
       if (!pedidos || pedidos.length === 0) return false
 
       const comprouProduto = pedidos.some((pedido) =>
-        pedido.itens.some((item) => item.produtoId === produtoId)
+        pedido.itens.some((item) => item.produtoId == produtoId) // == para evitar erro de tipo (string vs int)
       )
       return comprouProduto
     } catch (error) {
@@ -295,16 +345,18 @@ const pedidoService = {
 
   async obterDownloadsPorUsuario(usuarioId) {
     try {
+      // Busca pedidos pagos do usuário
       const pedidos = await Pedido.findAll({
         where: {
           usuarioId,
-          status: ['pago', 'processando', 'enviado', 'entregue', 'concluido'],
+          status: { [Op.in]: ['pago', 'processando', 'enviado', 'entregue', 'concluido'] },
         },
         attributes: ['itens'],
       });
 
       const uniqueDigitalProductIds = new Set();
 
+      // Filtra os itens que são digitais dentro dos pedidos
       for (const pedido of pedidos) {
         if (pedido.itens && Array.isArray(pedido.itens)) {
           for (const item of pedido.itens) {
@@ -321,6 +373,7 @@ const pedidoService = {
 
       const baseUrl = process.env.BASE_URL || 'http://localhost:3045';
 
+      // Busca os detalhes dos produtos digitais e seus arquivos
       const produtosDigitaisComArquivos = await Produto.findAll({
         where: {
           id: { [Op.in]: Array.from(uniqueDigitalProductIds) },
@@ -340,19 +393,23 @@ const pedidoService = {
         attributes: ['id', 'nome', 'slug', 'descricao'], 
       });
 
+      // Formata a resposta
       const downloadsFormatados = produtosDigitaisComArquivos.map(produto => {
         const produtoJSON = produto.toJSON();
         const arquivosDoProduto = produtoJSON.ArquivoProdutos || [];
+        
         const imagemPrincipal = arquivosDoProduto.find(arq => arq.tipo === 'imagem' && arq.principal);
-        const imagemUrl = imagemPrincipal?.url ? new URL(imagemPrincipal.url.replace(/\\/g, '/'), baseUrl).href : 'https://placehold.co/80x80.png';
+        const imagemUrl = imagemPrincipal?.url 
+            ? (imagemPrincipal.url.startsWith('http') ? imagemPrincipal.url : new URL(imagemPrincipal.url.replace(/\\/g, '/'), baseUrl).href)
+            : 'https://placehold.co/80x80.png';
 
         const arquivosDigitaisFormatados = arquivosDoProduto
           .filter(arq => arq.tipo === 'arquivo')
           .map(arq => ({
             id: arq.id,
             nome: arq.nome,
-            url: arq.url,
-            fullUrl: new URL(arq.url.replace(/\\/g, '/'), baseUrl).href,
+            url: arq.url, // Caminho relativo ou absoluto salvo
+            fullUrl: arq.url.startsWith('http') ? arq.url : new URL(arq.url.replace(/\\/g, '/'), baseUrl).href,
             mimeType: arq.mimeType,
             tamanho: arq.tamanho,
           }));
@@ -367,6 +424,7 @@ const pedidoService = {
         };
       });
 
+      // Retorna apenas produtos que tenham arquivos disponíveis
       const downloadsComArquivosReais = downloadsFormatados.filter(item => item.arquivos.length > 0);
       return downloadsComArquivosReais;
 
@@ -399,12 +457,16 @@ const pedidoService = {
       });
 
       const baseUrl = process.env.BASE_URL || 'http://localhost:3045';
+      
       const produtosFormatados = relacionados.map(produto => {
         const p = produto.toJSON();
         p.imagens = (p.ArquivoProdutos || [])
           .filter(arq => arq.tipo === 'imagem')
           .sort((a, b) => (a.principal ? -1 : 1) - (b.principal ? -1 : 1))
-          .map(arq => new URL(arq.url.replace(/\\/g, '/'), baseUrl).href);
+          .map(arq => {
+              if (arq.url.startsWith('http')) return arq.url;
+              return new URL(arq.url.replace(/\\/g, '/'), baseUrl).href;
+          });
          delete p.ArquivoProdutos; 
         return p;
       });
